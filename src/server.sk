@@ -35,17 +35,27 @@ def main {
       "capabilities": {
         "textDocumentSync": openDocuments.syncKind,
         "hoverProvider": true,
+        "definitionProvider": true,
       },
     }
   })
 
   # Show tooltips on hover
-  connection.onHover(hover => {
-    try {
-      return computeTooltip(connection, hover)
-    } catch e dynamic {
-      reportError(connection, e)
-    }
+  connection.onHover(request => {
+    var tooltip dynamic = null
+    reportErrors(connection, => {
+      tooltip = computeTooltip(request)
+    })
+    return tooltip
+  })
+
+  # Support the "go to definition" feature
+  connection.onDefinition(request => {
+    var location dynamic = null
+    reportErrors(connection, => {
+      location = computeDefinitionLocation(request)
+    })
+    return location
   })
 
   # Listen to file system changes for *.sk files
@@ -56,12 +66,12 @@ def main {
   connection.listen()
 }
 
-def computeTooltip(connection dynamic, hover dynamic) dynamic {
-  var absolute = server.Files.uriToFilePath(hover.uri)
+def computeTooltip(request dynamic) dynamic {
+  var absolute = server.Files.uriToFilePath(request.uri)
   var result = skew.tooltipQuery({
     "source": absolute,
-    "line": hover.position.line,
-    "column": hover.position.character,
+    "line": request.position.line,
+    "column": request.position.character,
   })
   if result.tooltip != null {
     return {
@@ -70,6 +80,22 @@ def computeTooltip(connection dynamic, hover dynamic) dynamic {
         "value": result.tooltip,
       },
       "range": convertRange(result.range),
+    }
+  }
+  return null
+}
+
+def computeDefinitionLocation(request dynamic) dynamic {
+  var absolute = server.Files.uriToFilePath(request.uri)
+  var result = skew.definitionQuery({
+    "source": absolute,
+    "line": request.position.line,
+    "column": request.position.character,
+  })
+  if result.definition != null {
+    return {
+      "uri": pathToURI(result.definition.source),
+      "range": convertRange(result.definition),
     }
   }
   return null
@@ -84,20 +110,21 @@ class Builder {
   def buildLater {
     clearTimeout(timeout)
     timeout = setTimeout(=> {
-      try {
-        var diagnostics = build(workspaceRoot, openDocuments)
-        sendDiagnostics(openDocuments, diagnostics, connection)
-      } catch e dynamic {
-        reportError(connection, e)
-      }
+      reportErrors(connection, => {
+        sendDiagnostics(connection, build(workspaceRoot, openDocuments))
+      })
     }, 100)
   }
 }
 
-def reportError(connection dynamic, e dynamic) {
-  var message = (e && e.stack ? e.stack : e) + ""
-  connection.console.error("skew: \(message)")
-  connection.window.showErrorMessage("skew: \(message)")
+def reportErrors(connection dynamic, callback fn()) {
+  try {
+    callback()
+  } catch e dynamic {
+    var message = (e && e.stack ? e.stack : e) + ""
+    connection.console.error("skew: \(message)")
+    connection.window.showErrorMessage("skew: \(message)")
+  }
 }
 
 def findAllFiles(root string, filter fn(string) bool) List<string> {
@@ -126,28 +153,15 @@ def findAllFiles(root string, filter fn(string) bool) List<string> {
 
 def build(workspaceRoot dynamic, openDocuments dynamic) List<dynamic> {
   var files = findAllFiles(workspaceRoot, name => name.endsWith(".sk"))
-  var allDocuments List<dynamic> = openDocuments.all()
   var inputs List<dynamic> = []
-  var map StringMap<int> = {}
 
-  # Read from the open document list first
-  for textDocument in allDocuments {
-    var absolute = server.Files.uriToFilePath(textDocument.uri)
-    map[absolute] = 0
+  # Read file contents but check for content in open documents first
+  for absolute in files {
+    var document = openDocuments.get(pathToURI(absolute))
     inputs.append({
       "name": absolute,
-      "contents": textDocument.getText(),
+      "contents": document ? document.getText() : fs.readFileSync(absolute, "utf8"),
     } as dynamic)
-  }
-
-  # Read the contents for any closed files from the file system
-  for absolute in files {
-    if !(absolute in map) {
-      inputs.append({
-        "name": absolute,
-        "contents": fs.readFileSync(absolute, "utf8"),
-      } as dynamic)
-    }
   }
 
   # Pass the inputs to the compiler for a build
@@ -173,8 +187,7 @@ def convertRange(range dynamic) dynamic {
   }
 }
 
-def sendDiagnostics(openDocuments dynamic, diagnostics List<dynamic>, connection dynamic) {
-  var allDocuments List<dynamic> = openDocuments.all()
+def sendDiagnostics(connection dynamic, diagnostics List<dynamic>) {
   var map StringMap<List<dynamic>> = {}
 
   for diagnostic in diagnostics {
@@ -193,11 +206,16 @@ def sendDiagnostics(openDocuments dynamic, diagnostics List<dynamic>, connection
     } as dynamic)
   }
 
-  for textDocument in allDocuments {
-    var absolute = server.Files.uriToFilePath(textDocument.uri)
+  map.each((absolute, fileDiagnostics) => {
     connection.sendDiagnostics({
-      "uri": textDocument.uri,
-      "diagnostics": map.get(absolute, []),
+      "uri": pathToURI(absolute),
+      "diagnostics": fileDiagnostics,
     })
-  }
+  })
+}
+
+def pathToURI(absolute string) string {
+  return "file://" + "/".join(absolute
+    .replaceAll("\\", "/").split("/")
+    .map<string>(dynamic.encodeURIComponent))
 }

@@ -17,18 +17,25 @@
     connection.onInitialize(function(params) {
       builder.workspaceRoot = params.rootPath;
       builder.buildLater();
-      return {'capabilities': {'textDocumentSync': openDocuments.syncKind, 'hoverProvider': true}};
+      return {'capabilities': {'textDocumentSync': openDocuments.syncKind, 'hoverProvider': true, 'definitionProvider': true}};
     });
 
     // Show tooltips on hover
-    connection.onHover(function(hover) {
-      try {
-        return computeTooltip(connection, hover);
-      }
+    connection.onHover(function(request) {
+      var tooltip = null;
+      reportErrors(connection, function() {
+        tooltip = computeTooltip(request);
+      });
+      return tooltip;
+    });
 
-      catch (e) {
-        reportError(connection, e);
-      }
+    // Support the "go to definition" feature
+    connection.onDefinition(function(request) {
+      var location = null;
+      reportErrors(connection, function() {
+        location = computeDefinitionLocation(request);
+      });
+      return location;
     });
 
     // Listen to file system changes for *.sk files
@@ -38,9 +45,9 @@
     connection.listen();
   }
 
-  function computeTooltip(connection, hover) {
-    var absolute = server.Files.uriToFilePath(hover.uri);
-    var result = skew.tooltipQuery({'source': absolute, 'line': hover.position.line, 'column': hover.position.character});
+  function computeTooltip(request) {
+    var absolute = server.Files.uriToFilePath(request.uri);
+    var result = skew.tooltipQuery({'source': absolute, 'line': request.position.line, 'column': request.position.character});
 
     if (result.tooltip !== null) {
       return {'contents': {'language': 'skew', 'value': result.tooltip}, 'range': convertRange(result.range)};
@@ -49,10 +56,27 @@
     return null;
   }
 
-  function reportError(connection, e) {
-    var message = (e && e.stack ? e.stack : e) + '';
-    connection.console.error('skew: ' + message);
-    connection.window.showErrorMessage('skew: ' + message);
+  function computeDefinitionLocation(request) {
+    var absolute = server.Files.uriToFilePath(request.uri);
+    var result = skew.definitionQuery({'source': absolute, 'line': request.position.line, 'column': request.position.character});
+
+    if (result.definition !== null) {
+      return {'uri': 'file://' + result.definition.source.split('\\').join('/').split('/').map(encodeURIComponent).join('/'), 'range': convertRange(result.definition)};
+    }
+
+    return null;
+  }
+
+  function reportErrors(connection, callback) {
+    try {
+      callback();
+    }
+
+    catch (e) {
+      var message = (e && e.stack ? e.stack : e) + '';
+      connection.console.error('skew: ' + message);
+      connection.window.showErrorMessage('skew: ' + message);
+    }
   }
 
   function findAllFiles(root, filter) {
@@ -84,25 +108,13 @@
     var files = findAllFiles(workspaceRoot, function(name) {
       return in_string.endsWith(name, '.sk');
     });
-    var allDocuments = openDocuments.all();
     var inputs = [];
-    var map = Object.create(null);
 
-    // Read from the open document list first
-    for (var i = 0, count = allDocuments.length; i < count; i = i + 1 | 0) {
-      var textDocument = allDocuments[i];
-      var absolute = server.Files.uriToFilePath(textDocument.uri);
-      map[absolute] = 0;
-      inputs.push({'name': absolute, 'contents': textDocument.getText()});
-    }
-
-    // Read the contents for any closed files from the file system
-    for (var i1 = 0, count1 = files.length; i1 < count1; i1 = i1 + 1 | 0) {
-      var absolute1 = files[i1];
-
-      if (!(absolute1 in map)) {
-        inputs.push({'name': absolute1, 'contents': fs.readFileSync(absolute1, 'utf8')});
-      }
+    // Read file contents but check for content in open documents first
+    for (var i = 0, count = files.length; i < count; i = i + 1 | 0) {
+      var absolute = files[i];
+      var document = openDocuments.get('file://' + absolute.split('\\').join('/').split('/').map(encodeURIComponent).join('/'));
+      inputs.push({'name': absolute, 'contents': document ? document.getText() : fs.readFileSync(absolute, 'utf8')});
     }
 
     // Pass the inputs to the compiler for a build
@@ -114,8 +126,7 @@
     return {'start': {'line': range.start.line, 'character': range.start.column}, 'end': {'line': range.end.line, 'character': range.end.column}};
   }
 
-  function sendDiagnostics(openDocuments, diagnostics, connection) {
-    var allDocuments = openDocuments.all();
+  function sendDiagnostics(connection, diagnostics) {
     var map = Object.create(null);
 
     for (var i = 0, count = diagnostics.length; i < count; i = i + 1 | 0) {
@@ -131,11 +142,9 @@
       group.push({'severity': diagnostic.kind === 'error' ? server.DiagnosticSeverity.Error : server.DiagnosticSeverity.Warning, 'range': convertRange(diagnostic.range), 'message': diagnostic.text});
     }
 
-    for (var i1 = 0, count1 = allDocuments.length; i1 < count1; i1 = i1 + 1 | 0) {
-      var textDocument = allDocuments[i1];
-      var absolute1 = server.Files.uriToFilePath(textDocument.uri);
-      connection.sendDiagnostics({'uri': textDocument.uri, 'diagnostics': in_StringMap.get(map, absolute1, [])});
-    }
+    in_StringMap.each(map, function(absolute, fileDiagnostics) {
+      connection.sendDiagnostics({'uri': 'file://' + absolute.split('\\').join('/').split('/').map(encodeURIComponent).join('/'), 'diagnostics': fileDiagnostics});
+    });
   }
 
   function Builder(connection) {
@@ -149,14 +158,9 @@
     var self = this;
     clearTimeout(self.timeout);
     self.timeout = setTimeout(function() {
-      try {
-        var diagnostics = build(self.workspaceRoot, self.openDocuments);
-        sendDiagnostics(self.openDocuments, diagnostics, self.connection);
-      }
-
-      catch (e) {
-        reportError(self.connection, e);
-      }
+      reportErrors(self.connection, function() {
+        sendDiagnostics(self.connection, build(self.workspaceRoot, self.openDocuments));
+      });
     }, 100);
   };
 
@@ -173,6 +177,12 @@
 
     // Compare against undefined so the key is only hashed once for speed
     return value !== void 0 ? value : defaultValue;
+  };
+
+  in_StringMap.each = function(self, x) {
+    for (var key in self) {
+      x(key, self[key]);
+    }
   };
 
   var server = require('vscode-languageserver');
