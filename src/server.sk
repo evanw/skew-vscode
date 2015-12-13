@@ -36,6 +36,7 @@ def main {
         "textDocumentSync": openDocuments.syncKind,
         "hoverProvider": true,
         "definitionProvider": true,
+        "documentSymbolProvider": true,
       },
     }
   })
@@ -56,6 +57,15 @@ def main {
       location = computeDefinitionLocation(request)
     })
     return location
+  })
+
+  # Support the "go to symbol" feature
+  connection.onDocumentSymbol(request => {
+    var info List<dynamic> = null
+    reportErrors(connection, => {
+      info = computeDocumentSymbols(request)
+    })
+    return info
   })
 
   # Listen to file system changes for *.sk files
@@ -99,6 +109,71 @@ def computeDefinitionLocation(request dynamic) dynamic {
     }
   }
   return null
+}
+
+enum VisualStudioCode.SymbolKind {
+  NONE
+  FILE
+  MODULE
+  NAMESPACE
+  PACKAGE
+  CLASS
+  METHOD
+  PROPERTY
+  FIELD
+  CONSTRUCTOR
+  ENUM
+  INTERFACE
+  FUNCTION
+  VARIABLE
+  CONSTANT
+  STRING
+  NUMBER
+  BOOLEAN
+  ARRAY
+}
+
+const symbolKindMap StringMap<VisualStudioCode.SymbolKind> = {
+  "OBJECT_CLASS": .CLASS,
+  "OBJECT_ENUM": .ENUM,
+  "OBJECT_INTERFACE": .INTERFACE,
+  "OBJECT_NAMESPACE": .NAMESPACE,
+  "OBJECT_WRAPPED": .CLASS,
+
+  "FUNCTION_ANNOTATION": .FUNCTION,
+  "FUNCTION_CONSTRUCTOR": .CONSTRUCTOR,
+  "FUNCTION_GLOBAL": .FUNCTION,
+  "FUNCTION_INSTANCE": .METHOD,
+
+  "VARIABLE_ENUM": .VARIABLE,
+  "VARIABLE_GLOBAL": .VARIABLE,
+  "VARIABLE_INSTANCE": .FIELD,
+}
+
+def computeDocumentSymbols(request dynamic) List<dynamic> {
+  var absolute = server.Files.uriToFilePath(request.uri)
+  var result = skew.symbolsQuery({
+    "source": absolute,
+  })
+  if result.symbols == null {
+    return null
+  }
+  var symbols List<dynamic> = []
+  for symbol in result.symbols as List<dynamic> {
+    var kind = symbolKindMap.get(symbol.kind, .NONE)
+    if kind != .NONE {
+      symbols.append({
+        "name": symbol.name,
+        "kind": kind,
+        "location": {
+          "uri": request.uri,
+          "range": convertRange(symbol.range),
+        },
+        "containerName": symbol.parent,
+      } as dynamic)
+    }
+  }
+  return symbols
 }
 
 class Builder {

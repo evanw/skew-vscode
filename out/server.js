@@ -17,7 +17,7 @@
     connection.onInitialize(function(params) {
       builder.workspaceRoot = params.rootPath;
       builder.buildLater();
-      return {'capabilities': {'textDocumentSync': openDocuments.syncKind, 'hoverProvider': true, 'definitionProvider': true}};
+      return {'capabilities': {'textDocumentSync': openDocuments.syncKind, 'hoverProvider': true, 'definitionProvider': true, 'documentSymbolProvider': true}};
     });
 
     // Show tooltips on hover
@@ -36,6 +36,15 @@
         location = computeDefinitionLocation(request);
       });
       return location;
+    });
+
+    // Support the "go to symbol" feature
+    connection.onDocumentSymbol(function(request) {
+      var info = null;
+      reportErrors(connection, function() {
+        info = computeDocumentSymbols(request);
+      });
+      return info;
     });
 
     // Listen to file system changes for *.sk files
@@ -65,6 +74,28 @@
     }
 
     return null;
+  }
+
+  function computeDocumentSymbols(request) {
+    var absolute = server.Files.uriToFilePath(request.uri);
+    var result = skew.symbolsQuery({'source': absolute});
+
+    if (result.symbols === null) {
+      return null;
+    }
+
+    var symbols = [];
+
+    for (var i = 0, list = result.symbols, count = list.length; i < count; i = i + 1 | 0) {
+      var symbol = list[i];
+      var kind = in_StringMap.get(symbolKindMap, symbol.kind, 0);
+
+      if (kind != 0) {
+        symbols.push({'name': symbol.name, 'kind': kind, 'location': {'uri': request.uri, 'range': convertRange(symbol.range)}, 'containerName': symbol.parent});
+      }
+    }
+
+    return symbols;
   }
 
   function reportErrors(connection, callback) {
@@ -176,6 +207,11 @@
 
   var in_StringMap = {};
 
+  in_StringMap.insert = function(self, key, value) {
+    self[key] = value;
+    return self;
+  };
+
   in_StringMap.get = function(self, key, defaultValue) {
     var value = self[key];
 
@@ -187,6 +223,7 @@
   var skew = require('skew').create();
   var path = require('path');
   var fs = require('fs');
+  var symbolKindMap = in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(Object.create(null), 'OBJECT_CLASS', 5), 'OBJECT_ENUM', 10), 'OBJECT_INTERFACE', 11), 'OBJECT_NAMESPACE', 3), 'OBJECT_WRAPPED', 5), 'FUNCTION_ANNOTATION', 12), 'FUNCTION_CONSTRUCTOR', 9), 'FUNCTION_GLOBAL', 12), 'FUNCTION_INSTANCE', 6), 'VARIABLE_ENUM', 13), 'VARIABLE_GLOBAL', 13), 'VARIABLE_INSTANCE', 8);
 
   main();
 })();
