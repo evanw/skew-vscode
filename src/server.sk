@@ -1,0 +1,203 @@
+@import {
+  def require(name string) dynamic
+  def clearTimeout(timeout int)
+  def setTimeout(callback fn(), ms int) int
+  var process dynamic
+}
+
+var server = require("vscode-languageserver")
+var skew = require("skew").create()
+var path = require("path")
+var fs = require("fs")
+
+@entry
+def main {
+  var connection = server.createConnection(
+    server.IPCMessageReader.new(process),
+    server.IPCMessageWriter.new(process))
+
+  # The builder handles scheduling asynchronous builds
+  var builder = Builder.new(connection)
+
+  # Listen to open documents
+  var openDocuments = server.TextDocuments.new()
+  builder.openDocuments = openDocuments
+  openDocuments.listen(connection)
+  openDocuments.onDidChangeContent(change => {
+    builder.buildLater
+  })
+
+  # Grab the workspace when the connection opens
+  connection.onInitialize(params => {
+    builder.workspaceRoot = params.rootPath
+    builder.buildLater
+    return {
+      "capabilities": {
+        "textDocumentSync": openDocuments.syncKind,
+        "hoverProvider": true,
+      },
+    }
+  })
+
+  # Show tooltips on hover
+  connection.onHover(hover => {
+    try {
+      return computeTooltip(connection, hover)
+    } catch e dynamic {
+      reportError(connection, e)
+    }
+  })
+
+  # Listen to file system changes for *.sk files
+  connection.onDidChangeWatchedFiles(change => {
+    builder.buildLater
+  })
+
+  connection.listen()
+}
+
+def computeTooltip(connection dynamic, hover dynamic) dynamic {
+  var absolute = server.Files.uriToFilePath(hover.uri)
+  var result = skew.tooltipQuery({
+    "source": absolute,
+    "line": hover.position.line,
+    "column": hover.position.character,
+  })
+  if result.tooltip != null {
+    return {
+      "contents": {
+        "language": "skew",
+        "value": result.tooltip,
+      },
+      "range": convertRange(result.range),
+    }
+  }
+  return null
+}
+
+class Builder {
+  var connection dynamic
+  var workspaceRoot string = null
+  var openDocuments dynamic = null
+  var timeout = -1
+
+  def buildLater {
+    clearTimeout(timeout)
+    timeout = setTimeout(=> {
+      try {
+        var diagnostics = build(workspaceRoot, openDocuments)
+        sendDiagnostics(openDocuments, diagnostics, connection)
+      } catch e dynamic {
+        reportError(connection, e)
+      }
+    }, 100)
+  }
+}
+
+def reportError(connection dynamic, e dynamic) {
+  var message = (e && e.stack ? e.stack : e) + ""
+  connection.console.error("skew: \(message)")
+  connection.window.showErrorMessage("skew: \(message)")
+}
+
+def findAllFiles(root string, filter fn(string) bool) List<string> {
+  var files List<string> = []
+  var folders = [root]
+
+  while !folders.isEmpty {
+    var folder = folders.takeLast
+    var entries List<string> = fs.readdirSync(folder)
+
+    for entry in entries {
+      var absolute = path.join(folder, entry)
+
+      if fs.statSync(absolute).isDirectory() {
+        folders.append(absolute)
+      }
+
+      else if filter(entry) {
+        files.append(absolute)
+      }
+    }
+  }
+
+  return files
+}
+
+def build(workspaceRoot dynamic, openDocuments dynamic) List<dynamic> {
+  var files = findAllFiles(workspaceRoot, name => name.endsWith(".sk"))
+  var allDocuments List<dynamic> = openDocuments.all()
+  var inputs List<dynamic> = []
+  var map StringMap<int> = {}
+
+  # Read from the open document list first
+  for textDocument in allDocuments {
+    var absolute = server.Files.uriToFilePath(textDocument.uri)
+    map[absolute] = 0
+    inputs.append({
+      "name": absolute,
+      "contents": textDocument.getText(),
+    } as dynamic)
+  }
+
+  # Read the contents for any closed files from the file system
+  for absolute in files {
+    if !(absolute in map) {
+      inputs.append({
+        "name": absolute,
+        "contents": fs.readFileSync(absolute, "utf8"),
+      } as dynamic)
+    }
+  }
+
+  # Pass the inputs to the compiler for a build
+  var result = skew.compile({
+    "target": "js",
+    "inputs": inputs,
+    "stopAfterResolve": true,
+  })
+
+  return result.log.diagnostics
+}
+
+def convertRange(range dynamic) dynamic {
+  return {
+    "start": {
+      "line": range.start.line,
+      "character": range.start.column
+    },
+    "end": {
+      "line": range.end.line,
+      "character": range.end.column
+    },
+  }
+}
+
+def sendDiagnostics(openDocuments dynamic, diagnostics List<dynamic>, connection dynamic) {
+  var allDocuments List<dynamic> = openDocuments.all()
+  var map StringMap<List<dynamic>> = {}
+
+  for diagnostic in diagnostics {
+    var absolute = diagnostic.range.source
+    var group = map.get(absolute, null)
+
+    if group == null {
+      group = []
+      map[absolute] = group
+    }
+
+    group.append({
+      "severity": diagnostic.kind == "error" ? server.DiagnosticSeverity.Error : server.DiagnosticSeverity.Warning,
+      "range": convertRange(diagnostic.range),
+      "message": diagnostic.text,
+    } as dynamic)
+  }
+
+  for textDocument in allDocuments {
+    var absolute = server.Files.uriToFilePath(textDocument.uri)
+    connection.sendDiagnostics({
+      "uri": textDocument.uri,
+      "diagnostics": map.get(absolute, []),
+    })
+  }
+}

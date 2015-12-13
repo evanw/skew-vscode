@@ -1,0 +1,51 @@
+{
+  "name": "skew-vscode",
+  "description": "A language service for Skew",
+  "version": "0.0.1",
+  "publisher": "evanw",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/evanw/skew-vscode"
+  },
+  "license": "MIT",
+  "engines": {
+    "vscode": "^0.10.1"
+  },
+  "categories": [
+    "Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:skew"
+  ],
+  "scripts": {
+    "build": "mkdir -p out && node_modules/.bin/skewc src/extension.sk --output-file=out/extension.js && node_modules/.bin/skewc src/server.sk --output-file=out/server.js --inline-functions --fold-constants"
+  },
+  "main": "./out/extension",
+  "contributes": {
+    "languages": [
+      {
+        "id": "skew",
+        "aliases": [
+          "Skew",
+          "skew"
+        ],
+        "extensions": [
+          ".sk"
+        ],
+        "configuration": "./skew.configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "skew",
+        "scopeName": "source.skew",
+        "path": "./syntaxes/Skew.tmLanguage"
+      }
+    ]
+  },
+  "dependencies": {
+    "skew": "0.6.1",
+    "vscode-languageclient": "^1.1.0",
+    "vscode-languageserver": "^1.1.0"
+  }
+}
