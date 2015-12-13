@@ -111,7 +111,8 @@ class Builder {
     clearTimeout(timeout)
     timeout = setTimeout(=> {
       reportErrors(connection, => {
-        sendDiagnostics(connection, build(workspaceRoot, openDocuments))
+        var diagnostics = build(workspaceRoot, openDocuments)
+        sendDiagnostics(openDocuments, diagnostics, connection)
       })
     }, 100)
   }
@@ -187,7 +188,8 @@ def convertRange(range dynamic) dynamic {
   }
 }
 
-def sendDiagnostics(connection dynamic, diagnostics List<dynamic>) {
+def sendDiagnostics(openDocuments dynamic, diagnostics List<dynamic>, connection dynamic) {
+  var allDocuments List<dynamic> = openDocuments.all()
   var map StringMap<List<dynamic>> = {}
 
   for diagnostic in diagnostics {
@@ -206,12 +208,13 @@ def sendDiagnostics(connection dynamic, diagnostics List<dynamic>) {
     } as dynamic)
   }
 
-  map.each((absolute, fileDiagnostics) => {
+  for textDocument in allDocuments {
+    var absolute = server.Files.uriToFilePath(textDocument.uri)
     connection.sendDiagnostics({
-      "uri": pathToURI(absolute),
-      "diagnostics": fileDiagnostics,
+      "uri": textDocument.uri,
+      "diagnostics": map.get(absolute, []),
     })
-  })
+  }
 }
 
 def pathToURI(absolute string) string {

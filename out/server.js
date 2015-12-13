@@ -126,7 +126,8 @@
     return {'start': {'line': range.start.line, 'character': range.start.column}, 'end': {'line': range.end.line, 'character': range.end.column}};
   }
 
-  function sendDiagnostics(connection, diagnostics) {
+  function sendDiagnostics(openDocuments, diagnostics, connection) {
+    var allDocuments = openDocuments.all();
     var map = Object.create(null);
 
     for (var i = 0, count = diagnostics.length; i < count; i = i + 1 | 0) {
@@ -142,9 +143,11 @@
       group.push({'severity': diagnostic.kind === 'error' ? server.DiagnosticSeverity.Error : server.DiagnosticSeverity.Warning, 'range': convertRange(diagnostic.range), 'message': diagnostic.text});
     }
 
-    in_StringMap.each(map, function(absolute, fileDiagnostics) {
-      connection.sendDiagnostics({'uri': 'file://' + absolute.split('\\').join('/').split('/').map(encodeURIComponent).join('/'), 'diagnostics': fileDiagnostics});
-    });
+    for (var i1 = 0, count1 = allDocuments.length; i1 < count1; i1 = i1 + 1 | 0) {
+      var textDocument = allDocuments[i1];
+      var absolute1 = server.Files.uriToFilePath(textDocument.uri);
+      connection.sendDiagnostics({'uri': textDocument.uri, 'diagnostics': in_StringMap.get(map, absolute1, [])});
+    }
   }
 
   function Builder(connection) {
@@ -159,7 +162,8 @@
     clearTimeout(self.timeout);
     self.timeout = setTimeout(function() {
       reportErrors(self.connection, function() {
-        sendDiagnostics(self.connection, build(self.workspaceRoot, self.openDocuments));
+        var diagnostics = build(self.workspaceRoot, self.openDocuments);
+        sendDiagnostics(self.openDocuments, diagnostics, self.connection);
       });
     }, 100);
   };
@@ -177,12 +181,6 @@
 
     // Compare against undefined so the key is only hashed once for speed
     return value !== void 0 ? value : defaultValue;
-  };
-
-  in_StringMap.each = function(self, x) {
-    for (var key in self) {
-      x(key, self[key]);
-    }
   };
 
   var server = require('vscode-languageserver');
