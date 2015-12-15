@@ -1,5 +1,5 @@
 (function() {
-  function main() {
+  function extensionMain() {
     exports.activate = function(context) {
       var serverModule = context.asAbsolutePath(path.join('out', 'server.js'));
       var serverOptions = {'run': {'module': serverModule, 'transport': client.TransportKind.ipc}, 'debug': {'module': serverModule, 'transport': client.TransportKind.ipc}};
@@ -98,5 +98,5 @@
   var vscode = require('vscode');
   var client = require('vscode-languageclient');
 
-  main();
+  extensionMain();
 })();

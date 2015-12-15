@@ -1,9 +1,10 @@
 (function() {
-  function main() {
+  function serverMain() {
+    var skew = require('skew').create();
     var connection = server.createConnection(new server.IPCMessageReader(process), new server.IPCMessageWriter(process));
 
     // The builder handles scheduling asynchronous builds
-    var builder = new Builder(connection);
+    var builder = new Builder(skew, connection);
 
     // Listen to open documents
     var openDocuments = new server.TextDocuments();
@@ -24,7 +25,7 @@
     connection.onHover(function(request) {
       var tooltip = null;
       reportErrors(connection, function() {
-        tooltip = computeTooltip(request);
+        tooltip = computeTooltip(skew, request);
       });
       return tooltip;
     });
@@ -33,7 +34,7 @@
     connection.onDefinition(function(request) {
       var location = null;
       reportErrors(connection, function() {
-        location = computeDefinitionLocation(request);
+        location = computeDefinitionLocation(skew, request);
       });
       return location;
     });
@@ -42,7 +43,7 @@
     connection.onDocumentSymbol(function(request) {
       var info = null;
       reportErrors(connection, function() {
-        info = computeDocumentSymbols(request);
+        info = computeDocumentSymbols(skew, request);
       });
       return info;
     });
@@ -54,9 +55,16 @@
     connection.listen();
   }
 
-  function computeTooltip(request) {
+  function computeTooltip(skew, request) {
     var absolute = server.Files.uriToFilePath(request.uri);
-    var result = skew.tooltipQuery({'source': absolute, 'line': request.position.line, 'column': request.position.character});
+    var result = skew.tooltipQuery({
+      'source': absolute,
+      'line': request.position.line,
+      'column': request.position.character,
+      // Visual Studio Code already includes diagnostics and including
+      // them in the results causes each diagnostic to be shown twice
+      'ignoreDiagnostics': true
+    });
 
     if (result.tooltip !== null) {
       return {'contents': {'language': 'skew', 'value': result.tooltip}, 'range': convertRange(result.range)};
@@ -65,7 +73,7 @@
     return null;
   }
 
-  function computeDefinitionLocation(request) {
+  function computeDefinitionLocation(skew, request) {
     var absolute = server.Files.uriToFilePath(request.uri);
     var result = skew.definitionQuery({'source': absolute, 'line': request.position.line, 'column': request.position.character});
 
@@ -76,7 +84,7 @@
     return null;
   }
 
-  function computeDocumentSymbols(request) {
+  function computeDocumentSymbols(skew, request) {
     var absolute = server.Files.uriToFilePath(request.uri);
     var result = skew.symbolsQuery({'source': absolute});
 
@@ -135,7 +143,7 @@
     return files;
   }
 
-  function build(workspaceRoot, openDocuments) {
+  function build(skew, workspaceRoot, openDocuments) {
     var files = findAllFiles(workspaceRoot, function(name) {
       return in_string.endsWith(name, '.sk');
     });
@@ -181,7 +189,8 @@
     }
   }
 
-  function Builder(connection) {
+  function Builder(skew, connection) {
+    this.skew = skew;
     this.connection = connection;
     this.workspaceRoot = null;
     this.openDocuments = null;
@@ -193,7 +202,7 @@
     clearTimeout(self.timeout);
     self.timeout = setTimeout(function() {
       reportErrors(self.connection, function() {
-        var diagnostics = build(self.workspaceRoot, self.openDocuments);
+        var diagnostics = build(self.skew, self.workspaceRoot, self.openDocuments);
         sendDiagnostics(self.openDocuments, diagnostics, self.connection);
       });
     }, 100);
@@ -219,11 +228,10 @@
     return value !== void 0 ? value : defaultValue;
   };
 
-  var server = require('vscode-languageserver');
-  var skew = require('skew').create();
-  var path = require('path');
   var fs = require('fs');
+  var path = require('path');
+  var server = require('vscode-languageserver');
   var symbolKindMap = in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(Object.create(null), 'OBJECT_CLASS', 5), 'OBJECT_ENUM', 10), 'OBJECT_INTERFACE', 11), 'OBJECT_NAMESPACE', 3), 'OBJECT_WRAPPED', 5), 'FUNCTION_ANNOTATION', 12), 'FUNCTION_CONSTRUCTOR', 9), 'FUNCTION_GLOBAL', 12), 'FUNCTION_INSTANCE', 6), 'VARIABLE_ENUM', 13), 'VARIABLE_GLOBAL', 13), 'VARIABLE_INSTANCE', 8);
 
-  main();
+  serverMain();
 })();

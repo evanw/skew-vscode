@@ -1,23 +1,147 @@
+enum Build {
+  NONE
+  EXTENSION
+  SERVER
+}
+
+const BUILD Build = .NONE
+
 @import {
   def require(name string) dynamic
   def clearTimeout(timeout int)
   def setTimeout(callback fn(), ms int) int
   var process dynamic
+  var exports dynamic
 }
 
-var server = require("vscode-languageserver")
-var skew = require("skew").create()
-var path = require("path")
 var fs = require("fs")
+var path = require("path")
+var vscode = require("vscode")
+var client = require("vscode-languageclient")
+var server = require("vscode-languageserver")
 
-@entry
-def main {
+@entry if BUILD == .EXTENSION
+def extensionMain {
+  exports.activate = context => {
+    var serverModule = context.asAbsolutePath(path.join("out", "server.js"))
+
+    var serverOptions dynamic = {
+      "run": { "module": serverModule, "transport": client.TransportKind.ipc },
+      "debug": { "module": serverModule, "transport": client.TransportKind.ipc },
+    }
+
+    var clientOptions dynamic = {
+      "documentSelector": ["skew"],
+      "synchronize": {
+        "fileEvents": vscode.workspace.createFileSystemWatcher("**/*.sk"),
+      },
+    }
+
+    var server = client.LanguageClient.new("Skew", serverOptions, clientOptions)
+    context.subscriptions.push(server.start())
+
+    vscode.languages.registerCodeActionsProvider("skew", {
+      "provideCodeActions": (document, range, context) => {
+        var diagnostic = context.diagnostics[0]
+        var message string = diagnostic.message
+        var commands List<dynamic> = []
+        var arguments = [document, diagnostic.range]
+
+        if message == "Unnecessary parentheses" {
+          commands.append({
+            "title": "Remove unnecessary parentheses",
+            "command": "skew.removeParentheses",
+            "arguments": arguments,
+          } as dynamic)
+        }
+
+        else if message.startsWith("Unnecessary cast from type") {
+          commands.append({
+            "title": "Remove unnecessary cast",
+            "command": "skew.removeCast",
+            "arguments": arguments,
+          } as dynamic)
+        }
+
+        else if message == "Number interpreted as decimal (use the prefix \"0o\" for octal numbers)" {
+          commands.append({
+            "title": "Remove leading zeros to avoid confusion",
+            "command": "skew.removeLeadingZeros",
+            "arguments": arguments,
+          } as dynamic)
+
+          commands.append({
+            "title": "Add \"0o\" to interpret as octal",
+            "command": "skew.addOctalPrefix",
+            "arguments": arguments,
+          } as dynamic)
+        }
+
+        return commands
+      },
+    })
+
+    context.subscriptions.push(vscode.commands.registerCommand("skew.removeParentheses", (document, range) => {
+      var text string = document.getText(range)
+      if text.startsWith("(") && text.endsWith(")") {
+        text = text.slice(1, text.count - 1)
+        var edit = vscode.WorkspaceEdit.new()
+        edit.replace(document.uri, range, text)
+        vscode.workspace.applyEdit(edit)
+      }
+    }))
+
+    context.subscriptions.push(vscode.commands.registerCommand("skew.removeCast", (document, range) => {
+      var text string = document.getText(range)
+      if text.startsWith("as ") {
+        var line = document.lineAt(range.start).text
+        var column = line.slice(0, range.start.character).trimRight().length
+        range = vscode.Range.new(
+          range.start.line, column,
+          range.end.line, range.end.character)
+        var edit = vscode.WorkspaceEdit.new()
+        edit.replace(document.uri, range, "")
+        vscode.workspace.applyEdit(edit)
+      }
+    }))
+
+    context.subscriptions.push(vscode.commands.registerCommand("skew.removeLeadingZeros", (document, range) => {
+      var text string = document.getText(range)
+      var value double = +(text as dynamic)
+      if text.startsWith("0") && value == value {
+        while text.startsWith("0") {
+          text = text.slice(1)
+        }
+        var edit = vscode.WorkspaceEdit.new()
+        edit.replace(document.uri, range, text)
+        vscode.workspace.applyEdit(edit)
+      }
+    }))
+
+    context.subscriptions.push(vscode.commands.registerCommand("skew.addOctalPrefix", (document, range) => {
+      var text string = document.getText(range)
+      var value double = +(text as dynamic)
+      if value == value {
+        while text.startsWith("0") {
+          text = text.slice(1)
+        }
+        var edit = vscode.WorkspaceEdit.new()
+        edit.replace(document.uri, range, "0o" + text)
+        vscode.workspace.applyEdit(edit)
+      }
+    }))
+  }
+}
+
+@entry if BUILD == .SERVER
+def serverMain {
+  var skew = require("skew").create()
   var connection = server.createConnection(
     server.IPCMessageReader.new(process),
     server.IPCMessageWriter.new(process))
 
   # The builder handles scheduling asynchronous builds
-  var builder = Builder.new(connection)
+  var builder = Builder.new(skew, connection)
 
   # Listen to open documents
   var openDocuments = server.TextDocuments.new()
@@ -45,7 +169,7 @@ def main {
   connection.onHover(request => {
     var tooltip dynamic = null
     reportErrors(connection, => {
-      tooltip = computeTooltip(request)
+      tooltip = computeTooltip(skew, request)
     })
     return tooltip
   })
@@ -54,7 +178,7 @@ def main {
   connection.onDefinition(request => {
     var location dynamic = null
     reportErrors(connection, => {
-      location = computeDefinitionLocation(request)
+      location = computeDefinitionLocation(skew, request)
     })
     return location
   })
@@ -63,7 +187,7 @@ def main {
   connection.onDocumentSymbol(request => {
     var info List<dynamic> = null
     reportErrors(connection, => {
-      info = computeDocumentSymbols(request)
+      info = computeDocumentSymbols(skew, request)
     })
     return info
   })
@@ -76,12 +200,16 @@ def main {
   connection.listen()
 }
 
-def computeTooltip(request dynamic) dynamic {
+def computeTooltip(skew dynamic, request dynamic) dynamic {
   var absolute = server.Files.uriToFilePath(request.uri)
   var result = skew.tooltipQuery({
     "source": absolute,
     "line": request.position.line,
     "column": request.position.character,
+
+    # Visual Studio Code already includes diagnostics and including
+    # them in the results causes each diagnostic to be shown twice
+    "ignoreDiagnostics": true,
   })
   if result.tooltip != null {
     return {
@@ -95,7 +223,7 @@ def computeTooltip(request dynamic) dynamic {
   return null
 }
 
-def computeDefinitionLocation(request dynamic) dynamic {
+def computeDefinitionLocation(skew dynamic, request dynamic) dynamic {
   var absolute = server.Files.uriToFilePath(request.uri)
   var result = skew.definitionQuery({
     "source": absolute,
@@ -150,7 +278,7 @@ const symbolKindMap StringMap<VisualStudioCode.SymbolKind> = {
   "VARIABLE_INSTANCE": .FIELD,
 }
 
-def computeDocumentSymbols(request dynamic) List<dynamic> {
+def computeDocumentSymbols(skew dynamic, request dynamic) List<dynamic> {
   var absolute = server.Files.uriToFilePath(request.uri)
   var result = skew.symbolsQuery({
     "source": absolute,
@@ -177,6 +305,7 @@ def computeDocumentSymbols(request dynamic) List<dynamic> {
 }
 
 class Builder {
+  var skew dynamic
   var connection dynamic
   var workspaceRoot string = null
   var openDocuments dynamic = null
@@ -186,7 +315,7 @@ class Builder {
     clearTimeout(timeout)
     timeout = setTimeout(=> {
       reportErrors(connection, => {
-        var diagnostics = build(workspaceRoot, openDocuments)
+        var diagnostics = build(skew, workspaceRoot, openDocuments)
         sendDiagnostics(openDocuments, diagnostics, connection)
       })
     }, 100)
@@ -227,7 +356,7 @@ def findAllFiles(root string, filter fn(string) bool) List<string> {
   return files
 }
 
-def build(workspaceRoot dynamic, openDocuments dynamic) List<dynamic> {
+def build(skew dynamic, workspaceRoot dynamic, openDocuments dynamic) List<dynamic> {
   var files = findAllFiles(workspaceRoot, name => name.endsWith(".sk"))
   var inputs List<dynamic> = []
 

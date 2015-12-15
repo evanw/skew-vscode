@@ -1,7 +1,7 @@
 {
   "name": "skew-vscode",
   "description": "A language service for Skew",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "publisher": "evanw",
   "repository": {
     "type": "git",
@@ -18,7 +18,7 @@
     "onLanguage:skew"
   ],
   "scripts": {
-    "build": "mkdir -p out && node_modules/.bin/skewc src/extension.sk --output-file=out/extension.js && node_modules/.bin/skewc src/server.sk --output-file=out/server.js --inline-functions --fold-constants"
+    "build": "mkdir -p out && node_modules/.bin/skewc src --define:BUILD=EXTENSION --output-file=out/extension.js && node_modules/.bin/skewc src --define:BUILD=SERVER --output-file=out/server.js --inline-functions --fold-constants"
   },
   "main": "./out/extension",
   "contributes": {
@@ -44,7 +44,7 @@
     ]
   },
   "dependencies": {
-    "skew": "0.6.10",
+    "skew": "0.6.11",
     "vscode-languageclient": "^1.1.0",
     "vscode-languageserver": "^1.1.0"
   }
