@@ -1,4 +1,10 @@
 (function() {
+  function assert(truth) {
+    if (!truth) {
+      throw Error('Assertion failed');
+    }
+  }
+
   function serverMain() {
     var skew = require('skew').create();
     var connection = server.createConnection(new server.IPCMessageReader(process), new server.IPCMessageWriter(process));
@@ -95,7 +101,7 @@
     var symbols = [];
 
     for (var i = 0, list = result.symbols, count = list.length; i < count; i = i + 1 | 0) {
-      var symbol = list[i];
+      var symbol = in_List.get(list, i);
       var kind = in_StringMap.get(symbolKindMap, symbol.kind, 0);
 
       if (kind != 0) {
@@ -123,11 +129,11 @@
     var folders = [root];
 
     while (folders.length != 0) {
-      var folder = folders.pop();
+      var folder = in_List.takeLast(folders);
       var entries = fs.readdirSync(folder);
 
       for (var i = 0, count = entries.length; i < count; i = i + 1 | 0) {
-        var entry = entries[i];
+        var entry = in_List.get(entries, i);
         var absolute = path.join(folder, entry);
 
         if (fs.statSync(absolute).isDirectory()) {
@@ -151,7 +157,7 @@
 
     // Read file contents but check for content in open documents first
     for (var i = 0, count = files.length; i < count; i = i + 1 | 0) {
-      var absolute = files[i];
+      var absolute = in_List.get(files, i);
       var document = openDocuments.get('file://' + absolute.split('\\').join('/').split('/').map(encodeURIComponent).join('/'));
       inputs.push({'name': absolute, 'contents': document ? document.getText() : fs.readFileSync(absolute, 'utf8')});
     }
@@ -170,7 +176,7 @@
     var map = Object.create(null);
 
     for (var i = 0, count = diagnostics.length; i < count; i = i + 1 | 0) {
-      var diagnostic = diagnostics[i];
+      var diagnostic = in_List.get(diagnostics, i);
       var absolute = diagnostic.range.source;
       var group = in_StringMap.get(map, absolute, null);
 
@@ -183,7 +189,7 @@
     }
 
     for (var i1 = 0, count1 = allDocuments.length; i1 < count1; i1 = i1 + 1 | 0) {
-      var textDocument = allDocuments[i1];
+      var textDocument = in_List.get(allDocuments, i1);
       var absolute1 = server.Files.uriToFilePath(textDocument.uri);
       connection.sendDiagnostics({'uri': textDocument.uri, 'diagnostics': in_StringMap.get(map, absolute1, [])});
     }
@@ -210,8 +216,25 @@
 
   var in_string = {};
 
+  in_string.slice1 = function(self, start) {
+    assert(0 <= start && start <= self.length);
+    return self.slice(start);
+  };
+
   in_string.endsWith = function(self, text) {
-    return self.length >= text.length && self.slice(self.length - text.length | 0) == text;
+    return self.length >= text.length && in_string.slice1(self, self.length - text.length | 0) == text;
+  };
+
+  var in_List = {};
+
+  in_List.get = function(self, index) {
+    assert(0 <= index && index < self.length);
+    return self[index];
+  };
+
+  in_List.takeLast = function(self) {
+    assert(self.length != 0);
+    return self.pop();
   };
 
   var in_StringMap = {};

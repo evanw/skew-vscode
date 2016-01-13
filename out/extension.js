@@ -1,4 +1,10 @@
 (function() {
+  function assert(truth) {
+    if (!truth) {
+      throw Error('Assertion failed');
+    }
+  }
+
   function extensionMain() {
     exports.activate = function(context) {
       var serverModule = context.asAbsolutePath(path.join('out', 'server.js'));
@@ -31,7 +37,7 @@
         var text = document.getText(range);
 
         if (in_string.startsWith(text, '(') && in_string.endsWith(text, ')')) {
-          text = text.slice(1, in_string.count(text) - 1 | 0);
+          text = in_string.slice2(text, 1, in_string.count(text) - 1 | 0);
           var edit = new vscode.WorkspaceEdit();
           edit.replace(document.uri, range, text);
           vscode.workspace.applyEdit(edit);
@@ -55,7 +61,7 @@
 
         if (in_string.startsWith(text, '0') && value == value) {
           while (in_string.startsWith(text, '0')) {
-            text = text.slice(1);
+            text = in_string.slice1(text, 1);
           }
 
           var edit = new vscode.WorkspaceEdit();
@@ -69,7 +75,7 @@
 
         if (value == value) {
           while (in_string.startsWith(text, '0')) {
-            text = text.slice(1);
+            text = in_string.slice1(text, 1);
           }
 
           var edit = new vscode.WorkspaceEdit();
@@ -82,12 +88,22 @@
 
   var in_string = {};
 
+  in_string.slice1 = function(self, start) {
+    assert(0 <= start && start <= in_string.count(self));
+    return self.slice(start);
+  };
+
+  in_string.slice2 = function(self, start, end) {
+    assert(0 <= start && start <= end && end <= in_string.count(self));
+    return self.slice(start, end);
+  };
+
   in_string.startsWith = function(self, text) {
-    return in_string.count(self) >= in_string.count(text) && self.slice(0, in_string.count(text)) == text;
+    return in_string.count(self) >= in_string.count(text) && in_string.slice2(self, 0, in_string.count(text)) == text;
   };
 
   in_string.endsWith = function(self, text) {
-    return in_string.count(self) >= in_string.count(text) && self.slice(in_string.count(self) - in_string.count(text) | 0) == text;
+    return in_string.count(self) >= in_string.count(text) && in_string.slice1(self, in_string.count(self) - in_string.count(text) | 0) == text;
   };
 
   in_string.count = function(self) {
