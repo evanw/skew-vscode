@@ -12,7 +12,7 @@
       var clientOptions = {'documentSelector': ['skew'], 'synchronize': {'fileEvents': vscode.workspace.createFileSystemWatcher('**/*.sk')}};
       var server = new client.LanguageClient('Skew', serverOptions, clientOptions);
       context.subscriptions.push(server.start());
-      vscode.languages.registerCodeActionsProvider('skew', {'provideCodeActions': function(document, range, context) {
+      context.subscriptions.push(vscode.languages.registerCodeActionsProvider('skew', {'provideCodeActions': function(document, range, context) {
         var diagnostic = context.diagnostics[0];
         var message = diagnostic.message;
         var commands = [];
@@ -32,7 +32,7 @@
         }
 
         return commands;
-      }});
+      }}));
       context.subscriptions.push(vscode.commands.registerCommand('skew.removeParentheses', function(document, range) {
         var text = document.getText(range);
 

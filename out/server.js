@@ -24,7 +24,7 @@
     connection.onInitialize(function(params) {
       builder.workspaceRoot = params.rootPath;
       builder.buildLater();
-      return {'capabilities': {'textDocumentSync': openDocuments.syncKind, 'hoverProvider': true, 'definitionProvider': true, 'documentSymbolProvider': true}};
+      return {'capabilities': {'textDocumentSync': openDocuments.syncKind, 'hoverProvider': true, 'renameProvider': true, 'definitionProvider': true, 'documentSymbolProvider': true}};
     });
 
     // Show tooltips on hover
@@ -52,6 +52,15 @@
         info = computeDocumentSymbols(skew, request);
       });
       return info;
+    });
+
+    // Support the "rename symbol" feature
+    connection.onRenameRequest(function(request) {
+      var edits = null;
+      reportErrors(connection, function() {
+        edits = computeRenameEdits(skew, request);
+      });
+      return edits;
     });
 
     // Listen to file system changes for *.sk files
@@ -110,6 +119,31 @@
     }
 
     return symbols;
+  }
+
+  function computeRenameEdits(skew, request) {
+    var absolute = server.Files.uriToFilePath(request.textDocument.uri);
+    var result = skew.renameQuery({'source': absolute, 'line': request.position.line, 'column': request.position.character});
+
+    if (result.ranges === null) {
+      return null;
+    }
+
+    var map = Object.create(null);
+
+    for (var i = 0, list = result.ranges, count = list.length; i < count; i = i + 1 | 0) {
+      var range = in_List.get(list, i);
+      var uri = 'file://' + range.source.split('\\').join('/').split('/').map(encodeURIComponent).join('/');
+      var changes = in_StringMap.get(map, uri, null);
+
+      if (changes == null) {
+        map[uri] = changes = [];
+      }
+
+      changes.push({'range': convertRange(range), 'newText': request.newName});
+    }
+
+    return {'changes': map};
   }
 
   function reportErrors(connection, callback) {

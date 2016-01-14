@@ -40,7 +40,7 @@ def extensionMain {
     var server = client.LanguageClient.new("Skew", serverOptions, clientOptions)
     context.subscriptions.push(server.start())
 
-    vscode.languages.registerCodeActionsProvider("skew", {
+    context.subscriptions.push(vscode.languages.registerCodeActionsProvider("skew", {
       "provideCodeActions": (document, range, context) => {
         var diagnostic = context.diagnostics[0]
         var message string = diagnostic.message
@@ -79,7 +79,7 @@ def extensionMain {
 
         return commands
       },
-    })
+    }))
 
     context.subscriptions.push(vscode.commands.registerCommand("skew.removeParentheses", (document, range) => {
       var text string = document.getText(range)
@@ -159,6 +159,7 @@ def serverMain {
       "capabilities": {
         "textDocumentSync": openDocuments.syncKind,
         "hoverProvider": true,
+        "renameProvider": true,
         "definitionProvider": true,
         "documentSymbolProvider": true,
       },
@@ -190,6 +191,15 @@ def serverMain {
       info = computeDocumentSymbols(skew, request)
     })
     return info
+  })
+
+  # Support the "rename symbol" feature
+  connection.onRenameRequest(request => {
+    var edits dynamic = null
+    reportErrors(connection, => {
+      edits = computeRenameEdits(skew, request)
+    })
+    return edits
   })
 
   # Listen to file system changes for *.sk files
@@ -302,6 +312,33 @@ def computeDocumentSymbols(skew dynamic, request dynamic) List<dynamic> {
     }
   }
   return symbols
+}
+
+def computeRenameEdits(skew dynamic, request dynamic) dynamic {
+  var absolute = server.Files.uriToFilePath(request.textDocument.uri)
+  var result = skew.renameQuery({
+    "source": absolute,
+    "line": request.position.line,
+    "column": request.position.character,
+  })
+  if result.ranges == null {
+    return null
+  }
+  var map StringMap<List<dynamic>> = {}
+  for range in result.ranges as List<dynamic> {
+    var uri = pathToURI(range.source)
+    var changes = map.get(uri, null)
+    if changes == null {
+      map[uri] = changes = []
+    }
+    changes.append({
+      "range": convertRange(range),
+      "newText": request.newName,
+    } as dynamic)
+  }
+  return {
+    "changes": map,
+  }
 }
 
 class Builder {
