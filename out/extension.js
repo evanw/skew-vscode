@@ -40,12 +40,12 @@
           var converted = convertRangeFromExtension(range);
 
           for (var i = 0, list = vscode.workspace.textDocuments, count = in_List.count(list); i < count; i = i + 1 | 0) {
-            var doc = in_List.get(list, i);
+            var document = in_List.get(list, i);
 
             // Make sure the contents of the document are still what they should be
-            if (doc.uri.toString() === uri && doc.getText(converted) === expected) {
+            if (document.uri.toString() === uri && document.getText(converted) === expected) {
               var edit = new vscode.WorkspaceEdit();
-              edit.replace(doc.uri, converted, replacement);
+              edit.replace(document.uri, converted, replacement);
               vscode.workspace.applyEdit(edit);
               break;
             }

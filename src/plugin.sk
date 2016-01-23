@@ -74,12 +74,12 @@ def extensionMain {
     context.subscriptions.push(vscode.commands.registerCommand("skew.applyFix", (uri, range, expected, replacement) => {
       reportErrorsFromExtension(=> {
         var converted = convertRangeFromExtension(range)
-        for doc in vscode.workspace.textDocuments as List<dynamic> {
+        for document in vscode.workspace.textDocuments as List<dynamic> {
 
           # Make sure the contents of the document are still what they should be
-          if doc.uri.toString() == uri && doc.getText(converted) == expected {
+          if document.uri.toString() == uri && document.getText(converted) == expected {
             var edit = vscode.WorkspaceEdit.new()
-            edit.replace(doc.uri, converted, replacement)
+            edit.replace(document.uri, converted, replacement)
             vscode.workspace.applyEdit(edit)
             break
           }
@@ -109,7 +109,7 @@ def serverMain {
 
   # Grab the workspace when the connection opens
   connection.onInitialize(params => {
-    builder.workspaceRoot = params.rootPath
+    builder.workspaceRoot = params.rootPath ? params.rootPath : null
     builder.buildLater
     return {
       "capabilities": {
@@ -167,9 +167,8 @@ def serverMain {
 }
 
 def computeTooltip(skew dynamic, request dynamic) dynamic {
-  var absolute = server.Files.uriToFilePath(request.uri)
   var result = skew.tooltipQuery({
-    "source": absolute,
+    "source": request.uri,
     "line": request.position.line,
     "column": request.position.character,
 
@@ -190,15 +189,14 @@ def computeTooltip(skew dynamic, request dynamic) dynamic {
 }
 
 def computeDefinitionLocation(skew dynamic, request dynamic) dynamic {
-  var absolute = server.Files.uriToFilePath(request.uri)
   var result = skew.definitionQuery({
-    "source": absolute,
+    "source": request.uri,
     "line": request.position.line,
     "column": request.position.character,
   })
   if result.definition != null {
     return {
-      "uri": pathToURI(result.definition.source),
+      "uri": result.definition.source,
       "range": convertRangeFromServer(result.definition),
     }
   }
@@ -245,9 +243,8 @@ const symbolKindMap StringMap<VisualStudioCode.SymbolKind> = {
 }
 
 def computeDocumentSymbols(skew dynamic, request dynamic) List<dynamic> {
-  var absolute = server.Files.uriToFilePath(request.uri)
   var result = skew.symbolsQuery({
-    "source": absolute,
+    "source": request.uri,
   })
   if result.symbols == null {
     return null
@@ -271,9 +268,8 @@ def computeDocumentSymbols(skew dynamic, request dynamic) List<dynamic> {
 }
 
 def computeRenameEdits(skew dynamic, request dynamic) dynamic {
-  var absolute = server.Files.uriToFilePath(request.textDocument.uri)
   var result = skew.renameQuery({
-    "source": absolute,
+    "source": request.textDocument.uri,
     "line": request.position.line,
     "column": request.position.character,
   })
@@ -360,16 +356,28 @@ def findAllFiles(root string, filter fn(string) bool) List<string> {
 }
 
 def build(skew dynamic, workspaceRoot dynamic, openDocuments dynamic) List<dynamic> {
-  var files = findAllFiles(workspaceRoot, name => name.endsWith(".sk"))
   var inputs List<dynamic> = []
+  var openURIs StringMap<int> = {}
 
-  # Read file contents but check for content in open documents first
-  for absolute in files {
-    var document = openDocuments.get(pathToURI(absolute))
+  # Always include all open documents
+  for document in openDocuments.all() as List<dynamic> {
+    openURIs[document.uri] = 0
     inputs.append({
-      "name": absolute,
-      "contents": document ? document.getText() : fs.readFileSync(absolute, "utf8"),
+      "name": document.uri,
+      "contents": document.getText(),
     } as dynamic)
+  }
+
+  # Read file contents for all non-open files
+  if workspaceRoot != null {
+    for absolute in findAllFiles(workspaceRoot, name => name.endsWith(".sk")) {
+      if !(pathToURI(absolute) in openURIs) {
+        inputs.append({
+          "name": absolute,
+          "contents": fs.readFileSync(absolute, "utf8"),
+        } as dynamic)
+      }
+    }
   }
 
   # Pass the inputs to the compiler for a build
@@ -425,11 +433,10 @@ def sendDiagnostics(openDocuments dynamic, diagnostics List<dynamic>, connection
     } as dynamic)
   }
 
-  for textDocument in allDocuments {
-    var absolute = server.Files.uriToFilePath(textDocument.uri)
+  for document in allDocuments {
     connection.sendDiagnostics({
-      "uri": textDocument.uri,
-      "diagnostics": map.get(absolute, []),
+      "uri": document.uri,
+      "diagnostics": map.get(document.uri, []),
     })
   }
 }

@@ -22,7 +22,7 @@
 
     // Grab the workspace when the connection opens
     connection.onInitialize(function(params) {
-      builder.workspaceRoot = params.rootPath;
+      builder.workspaceRoot = params.rootPath ? params.rootPath : null;
       builder.buildLater();
       return {'capabilities': {'textDocumentSync': openDocuments.syncKind, 'hoverProvider': true, 'renameProvider': true, 'definitionProvider': true, 'documentSymbolProvider': true}};
     });
@@ -71,9 +71,8 @@
   }
 
   function computeTooltip(skew, request) {
-    var absolute = server.Files.uriToFilePath(request.uri);
     var result = skew.tooltipQuery({
-      'source': absolute,
+      'source': request.uri,
       'line': request.position.line,
       'column': request.position.character,
       // Visual Studio Code already includes diagnostics and including
@@ -89,19 +88,17 @@
   }
 
   function computeDefinitionLocation(skew, request) {
-    var absolute = server.Files.uriToFilePath(request.uri);
-    var result = skew.definitionQuery({'source': absolute, 'line': request.position.line, 'column': request.position.character});
+    var result = skew.definitionQuery({'source': request.uri, 'line': request.position.line, 'column': request.position.character});
 
     if (result.definition !== null) {
-      return {'uri': 'file://' + result.definition.source.split('\\').join('/').split('/').map(encodeURIComponent).join('/'), 'range': convertRangeFromServer(result.definition)};
+      return {'uri': result.definition.source, 'range': convertRangeFromServer(result.definition)};
     }
 
     return null;
   }
 
   function computeDocumentSymbols(skew, request) {
-    var absolute = server.Files.uriToFilePath(request.uri);
-    var result = skew.symbolsQuery({'source': absolute});
+    var result = skew.symbolsQuery({'source': request.uri});
 
     if (result.symbols === null) {
       return null;
@@ -122,8 +119,7 @@
   }
 
   function computeRenameEdits(skew, request) {
-    var absolute = server.Files.uriToFilePath(request.textDocument.uri);
-    var result = skew.renameQuery({'source': absolute, 'line': request.position.line, 'column': request.position.character});
+    var result = skew.renameQuery({'source': request.textDocument.uri, 'line': request.position.line, 'column': request.position.character});
 
     if (result.ranges === null) {
       return null;
@@ -184,16 +180,27 @@
   }
 
   function build(skew, workspaceRoot, openDocuments) {
-    var files = findAllFiles(workspaceRoot, function(name) {
-      return in_string.endsWith(name, '.sk');
-    });
     var inputs = [];
+    var openURIs = Object.create(null);
 
-    // Read file contents but check for content in open documents first
-    for (var i = 0, count = files.length; i < count; i = i + 1 | 0) {
-      var absolute = in_List.get(files, i);
-      var document = openDocuments.get('file://' + absolute.split('\\').join('/').split('/').map(encodeURIComponent).join('/'));
-      inputs.push({'name': absolute, 'contents': document ? document.getText() : fs.readFileSync(absolute, 'utf8')});
+    // Always include all open documents
+    for (var i = 0, list = openDocuments.all(), count = list.length; i < count; i = i + 1 | 0) {
+      var document = in_List.get(list, i);
+      openURIs[document.uri] = 0;
+      inputs.push({'name': document.uri, 'contents': document.getText()});
+    }
+
+    // Read file contents for all non-open files
+    if (workspaceRoot !== null) {
+      for (var i1 = 0, list1 = findAllFiles(workspaceRoot, function(name) {
+        return in_string.endsWith(name, '.sk');
+      }), count1 = list1.length; i1 < count1; i1 = i1 + 1 | 0) {
+        var absolute = in_List.get(list1, i1);
+
+        if (!('file://' + absolute.split('\\').join('/').split('/').map(encodeURIComponent).join('/') in openURIs)) {
+          inputs.push({'name': absolute, 'contents': fs.readFileSync(absolute, 'utf8')});
+        }
+      }
     }
 
     // Pass the inputs to the compiler for a build
@@ -229,9 +236,8 @@
     }
 
     for (var i1 = 0, count1 = allDocuments.length; i1 < count1; i1 = i1 + 1 | 0) {
-      var textDocument = in_List.get(allDocuments, i1);
-      var absolute1 = server.Files.uriToFilePath(textDocument.uri);
-      connection.sendDiagnostics({'uri': textDocument.uri, 'diagnostics': in_StringMap.get(map, absolute1, [])});
+      var document = in_List.get(allDocuments, i1);
+      connection.sendDiagnostics({'uri': document.uri, 'diagnostics': in_StringMap.get(map, document.uri, [])});
     }
   }
 
