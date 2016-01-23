@@ -30,7 +30,7 @@
     // Show tooltips on hover
     connection.onHover(function(request) {
       var tooltip = null;
-      reportErrors(connection, function() {
+      reportErrorsFromServer(connection, function() {
         tooltip = computeTooltip(skew, request);
       });
       return tooltip;
@@ -39,7 +39,7 @@
     // Support the "go to definition" feature
     connection.onDefinition(function(request) {
       var location = null;
-      reportErrors(connection, function() {
+      reportErrorsFromServer(connection, function() {
         location = computeDefinitionLocation(skew, request);
       });
       return location;
@@ -48,7 +48,7 @@
     // Support the "go to symbol" feature
     connection.onDocumentSymbol(function(request) {
       var info = null;
-      reportErrors(connection, function() {
+      reportErrorsFromServer(connection, function() {
         info = computeDocumentSymbols(skew, request);
       });
       return info;
@@ -57,7 +57,7 @@
     // Support the "rename symbol" feature
     connection.onRenameRequest(function(request) {
       var edits = null;
-      reportErrors(connection, function() {
+      reportErrorsFromServer(connection, function() {
         edits = computeRenameEdits(skew, request);
       });
       return edits;
@@ -82,7 +82,7 @@
     });
 
     if (result.tooltip !== null) {
-      return {'contents': {'language': 'skew', 'value': result.tooltip}, 'range': convertRange(result.range)};
+      return {'contents': {'language': 'skew', 'value': result.tooltip}, 'range': convertRangeFromServer(result.range)};
     }
 
     return null;
@@ -93,7 +93,7 @@
     var result = skew.definitionQuery({'source': absolute, 'line': request.position.line, 'column': request.position.character});
 
     if (result.definition !== null) {
-      return {'uri': 'file://' + result.definition.source.split('\\').join('/').split('/').map(encodeURIComponent).join('/'), 'range': convertRange(result.definition)};
+      return {'uri': 'file://' + result.definition.source.split('\\').join('/').split('/').map(encodeURIComponent).join('/'), 'range': convertRangeFromServer(result.definition)};
     }
 
     return null;
@@ -114,7 +114,7 @@
       var kind = in_StringMap.get(symbolKindMap, symbol.kind, 0);
 
       if (kind != 0) {
-        symbols.push({'name': symbol.name, 'kind': kind, 'location': {'uri': request.uri, 'range': convertRange(symbol.range)}, 'containerName': symbol.parent});
+        symbols.push({'name': symbol.name, 'kind': kind, 'location': {'uri': request.uri, 'range': convertRangeFromServer(symbol.range)}, 'containerName': symbol.parent});
       }
     }
 
@@ -140,13 +140,13 @@
         map[uri] = changes = [];
       }
 
-      changes.push({'range': convertRange(range), 'newText': request.newName});
+      changes.push({'range': convertRangeFromServer(range), 'newText': request.newName});
     }
 
     return {'changes': map};
   }
 
-  function reportErrors(connection, callback) {
+  function reportErrorsFromServer(connection, callback) {
     try {
       callback();
     }
@@ -201,7 +201,7 @@
     return result.log.diagnostics;
   }
 
-  function convertRange(range) {
+  function convertRangeFromServer(range) {
     return {'start': {'line': range.start.line, 'character': range.start.column}, 'end': {'line': range.end.line, 'character': range.end.column}};
   }
 
@@ -219,7 +219,13 @@
         map[absolute] = group;
       }
 
-      group.push({'severity': diagnostic.kind === 'error' ? server.DiagnosticSeverity.Error : server.DiagnosticSeverity.Warning, 'range': convertRange(diagnostic.range), 'message': diagnostic.text});
+      group.push({
+        'severity': diagnostic.kind === 'error' ? server.DiagnosticSeverity.Error : server.DiagnosticSeverity.Warning,
+        'range': convertRangeFromServer(diagnostic.range),
+        'message': diagnostic.text,
+        // The only way to transport extra data is by abusing the "code" field
+        'code': JSON.stringify(diagnostic.fixes)
+      });
     }
 
     for (var i1 = 0, count1 = allDocuments.length; i1 < count1; i1 = i1 + 1 | 0) {
@@ -241,7 +247,7 @@
     var self = this;
     clearTimeout(self.timeout);
     self.timeout = setTimeout(function() {
-      reportErrors(self.connection, function() {
+      reportErrorsFromServer(self.connection, function() {
         var diagnostics = build(self.skew, self.workspaceRoot, self.openDocuments);
         sendDiagnostics(self.openDocuments, diagnostics, self.connection);
       });

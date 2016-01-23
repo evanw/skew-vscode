@@ -12,6 +12,11 @@ const BUILD Build = .NONE
   def setTimeout(callback fn(), ms int) int
   var process dynamic
   var exports dynamic
+
+  namespace JSON {
+    def parse(data string) dynamic
+    def stringify(data dynamic) string
+  }
 }
 
 var fs = require("fs")
@@ -42,93 +47,44 @@ def extensionMain {
 
     context.subscriptions.push(vscode.languages.registerCodeActionsProvider("skew", {
       "provideCodeActions": (document, range, context) => {
-        var diagnostic = context.diagnostics[0]
-        var message string = diagnostic.message
         var commands List<dynamic> = []
-        var arguments = [document, diagnostic.range]
+        reportErrorsFromExtension(=> {
+          # The only way to transport extra data is by abusing the "code" field
+          var diagnostic = context.diagnostics[0]
+          var fixes List<dynamic>
+          try {
+            fixes = JSON.parse(diagnostic.code)
+          } catch {
+            return
+          }
 
-        if message == "Unnecessary parentheses" {
-          commands.append({
-            "title": "Remove unnecessary parentheses",
-            "command": "skew.removeParentheses",
-            "arguments": arguments,
-          } as dynamic)
-        }
-
-        else if message.startsWith("Unnecessary cast from type") {
-          commands.append({
-            "title": "Remove unnecessary cast",
-            "command": "skew.removeCast",
-            "arguments": arguments,
-          } as dynamic)
-        }
-
-        else if message == "Number interpreted as decimal (use the prefix \"0o\" for octal numbers)" {
-          commands.append({
-            "title": "Remove leading zeros to avoid confusion",
-            "command": "skew.removeLeadingZeros",
-            "arguments": arguments,
-          } as dynamic)
-
-          commands.append({
-            "title": "Add \"0o\" to interpret as octal",
-            "command": "skew.addOctalPrefix",
-            "arguments": arguments,
-          } as dynamic)
-        }
-
+          # Convert each fix into a code action
+          for fix in fixes {
+            commands.append({
+              "title": fix.description,
+              "command": "skew.applyFix",
+              "arguments": [document.uri.toString(), fix.range, fix.expected, fix.replacement],
+            } as dynamic)
+          }
+        })
         return commands
       },
     }))
 
-    context.subscriptions.push(vscode.commands.registerCommand("skew.removeParentheses", (document, range) => {
-      var text string = document.getText(range)
-      if text.startsWith("(") && text.endsWith(")") {
-        text = text.slice(1, text.count - 1)
-        var edit = vscode.WorkspaceEdit.new()
-        edit.replace(document.uri, range, text)
-        vscode.workspace.applyEdit(edit)
-      }
-    }))
+    context.subscriptions.push(vscode.commands.registerCommand("skew.applyFix", (uri, range, expected, replacement) => {
+      reportErrorsFromExtension(=> {
+        var converted = convertRangeFromExtension(range)
+        for doc in vscode.workspace.textDocuments as List<dynamic> {
 
-    context.subscriptions.push(vscode.commands.registerCommand("skew.removeCast", (document, range) => {
-      var text string = document.getText(range)
-      if text.startsWith("as ") {
-        var line = document.lineAt(range.start).text
-        var column = line.slice(0, range.start.character).trimRight().length
-        range = vscode.Range.new(
-          range.start.line, column,
-          range.end.line, range.end.character)
-        var edit = vscode.WorkspaceEdit.new()
-        edit.replace(document.uri, range, "")
-        vscode.workspace.applyEdit(edit)
-      }
-    }))
-
-    context.subscriptions.push(vscode.commands.registerCommand("skew.removeLeadingZeros", (document, range) => {
-      var text string = document.getText(range)
-      var value double = +(text as dynamic)
-      if text.startsWith("0") && value == value {
-        while text.startsWith("0") {
-          text = text.slice(1)
+          # Make sure the contents of the document are still what they should be
+          if doc.uri.toString() == uri && doc.getText(converted) == expected {
+            var edit = vscode.WorkspaceEdit.new()
+            edit.replace(doc.uri, converted, replacement)
+            vscode.workspace.applyEdit(edit)
+            break
+          }
         }
-        var edit = vscode.WorkspaceEdit.new()
-        edit.replace(document.uri, range, text)
-        vscode.workspace.applyEdit(edit)
-      }
-    }))
-
-    context.subscriptions.push(vscode.commands.registerCommand("skew.addOctalPrefix", (document, range) => {
-      var text string = document.getText(range)
-      var value double = +(text as dynamic)
-      if value == value {
-        while text.startsWith("0") {
-          text = text.slice(1)
-        }
-        var edit = vscode.WorkspaceEdit.new()
-        edit.replace(document.uri, range, "0o" + text)
-        vscode.workspace.applyEdit(edit)
-      }
+      })
     }))
   }
 }
@@ -169,7 +125,7 @@ def serverMain {
   # Show tooltips on hover
   connection.onHover(request => {
     var tooltip dynamic = null
-    reportErrors(connection, => {
+    reportErrorsFromServer(connection, => {
       tooltip = computeTooltip(skew, request)
     })
     return tooltip
@@ -178,7 +134,7 @@ def serverMain {
   # Support the "go to definition" feature
   connection.onDefinition(request => {
     var location dynamic = null
-    reportErrors(connection, => {
+    reportErrorsFromServer(connection, => {
       location = computeDefinitionLocation(skew, request)
     })
     return location
@@ -187,7 +143,7 @@ def serverMain {
   # Support the "go to symbol" feature
   connection.onDocumentSymbol(request => {
     var info List<dynamic> = null
-    reportErrors(connection, => {
+    reportErrorsFromServer(connection, => {
       info = computeDocumentSymbols(skew, request)
     })
     return info
@@ -196,7 +152,7 @@ def serverMain {
   # Support the "rename symbol" feature
   connection.onRenameRequest(request => {
     var edits dynamic = null
-    reportErrors(connection, => {
+    reportErrorsFromServer(connection, => {
       edits = computeRenameEdits(skew, request)
     })
     return edits
@@ -227,7 +183,7 @@ def computeTooltip(skew dynamic, request dynamic) dynamic {
         "language": "skew",
         "value": result.tooltip,
       },
-      "range": convertRange(result.range),
+      "range": convertRangeFromServer(result.range),
     }
   }
   return null
@@ -243,7 +199,7 @@ def computeDefinitionLocation(skew dynamic, request dynamic) dynamic {
   if result.definition != null {
     return {
       "uri": pathToURI(result.definition.source),
-      "range": convertRange(result.definition),
+      "range": convertRangeFromServer(result.definition),
     }
   }
   return null
@@ -305,7 +261,7 @@ def computeDocumentSymbols(skew dynamic, request dynamic) List<dynamic> {
         "kind": kind,
         "location": {
           "uri": request.uri,
-          "range": convertRange(symbol.range),
+          "range": convertRangeFromServer(symbol.range),
         },
         "containerName": symbol.parent,
       } as dynamic)
@@ -332,7 +288,7 @@ def computeRenameEdits(skew dynamic, request dynamic) dynamic {
       map[uri] = changes = []
     }
     changes.append({
-      "range": convertRange(range),
+      "range": convertRangeFromServer(range),
       "newText": request.newName,
     } as dynamic)
   }
@@ -351,7 +307,7 @@ class Builder {
   def buildLater {
     clearTimeout(timeout)
     timeout = setTimeout(=> {
-      reportErrors(connection, => {
+      reportErrorsFromServer(connection, => {
         var diagnostics = build(skew, workspaceRoot, openDocuments)
         sendDiagnostics(openDocuments, diagnostics, connection)
       })
@@ -359,7 +315,17 @@ class Builder {
   }
 }
 
-def reportErrors(connection dynamic, callback fn()) {
+def reportErrorsFromExtension(callback fn()) {
+  try {
+    callback()
+  } catch e dynamic {
+    var message = (e && e.stack ? e.stack : e) + ""
+    dynamic.console.error("skew: \(message)")
+    vscode.window.showErrorMessage("skew: \(message)")
+  }
+}
+
+def reportErrorsFromServer(connection dynamic, callback fn()) {
   try {
     callback()
   } catch e dynamic {
@@ -416,7 +382,14 @@ def build(skew dynamic, workspaceRoot dynamic, openDocuments dynamic) List<dynam
   return result.log.diagnostics
 }
 
-def convertRange(range dynamic) dynamic {
+def convertRangeFromExtension(range dynamic) dynamic {
+  # TextDocument.getText() crashes if the range uses duck typing
+  return vscode.Range.new(
+    range.start.line, range.start.column,
+    range.end.line, range.end.column)
+}
+
+def convertRangeFromServer(range dynamic) dynamic {
   return {
     "start": {
       "line": range.start.line,
@@ -444,8 +417,11 @@ def sendDiagnostics(openDocuments dynamic, diagnostics List<dynamic>, connection
 
     group.append({
       "severity": diagnostic.kind == "error" ? server.DiagnosticSeverity.Error : server.DiagnosticSeverity.Warning,
-      "range": convertRange(diagnostic.range),
+      "range": convertRangeFromServer(diagnostic.range),
       "message": diagnostic.text,
+
+      # The only way to transport extra data is by abusing the "code" field
+      "code": JSON.stringify(diagnostic.fixes),
     } as dynamic)
   }
 

@@ -13,100 +13,73 @@
       var server = new client.LanguageClient('Skew', serverOptions, clientOptions);
       context.subscriptions.push(server.start());
       context.subscriptions.push(vscode.languages.registerCodeActionsProvider('skew', {'provideCodeActions': function(document, range, context) {
-        var diagnostic = context.diagnostics[0];
-        var message = diagnostic.message;
         var commands = [];
-        var $arguments = [document, diagnostic.range];
+        reportErrorsFromExtension(function() {
+          // The only way to transport extra data is by abusing the "code" field
+          var diagnostic = context.diagnostics[0];
+          var fixes = null;
 
-        if (message == 'Unnecessary parentheses') {
-          commands.push({'title': 'Remove unnecessary parentheses', 'command': 'skew.removeParentheses', 'arguments': $arguments});
-        }
+          try {
+            fixes = JSON.parse(diagnostic.code);
+          }
 
-        else if (in_string.startsWith(message, 'Unnecessary cast from type')) {
-          commands.push({'title': 'Remove unnecessary cast', 'command': 'skew.removeCast', 'arguments': $arguments});
-        }
+          catch (e) {
+            return;
+          }
 
-        else if (message == 'Number interpreted as decimal (use the prefix "0o" for octal numbers)') {
-          commands.push({'title': 'Remove leading zeros to avoid confusion', 'command': 'skew.removeLeadingZeros', 'arguments': $arguments});
-          commands.push({'title': 'Add "0o" to interpret as octal', 'command': 'skew.addOctalPrefix', 'arguments': $arguments});
-        }
-
+          // Convert each fix into a code action
+          for (var i = 0, list = fixes, count = in_List.count(list); i < count; i = i + 1 | 0) {
+            var fix = in_List.get(list, i);
+            commands.push({'title': fix.description, 'command': 'skew.applyFix', 'arguments': [document.uri.toString(), fix.range, fix.expected, fix.replacement]});
+          }
+        });
         return commands;
       }}));
-      context.subscriptions.push(vscode.commands.registerCommand('skew.removeParentheses', function(document, range) {
-        var text = document.getText(range);
+      context.subscriptions.push(vscode.commands.registerCommand('skew.applyFix', function(uri, range, expected, replacement) {
+        reportErrorsFromExtension(function() {
+          var converted = convertRangeFromExtension(range);
 
-        if (in_string.startsWith(text, '(') && in_string.endsWith(text, ')')) {
-          text = in_string.slice2(text, 1, in_string.count(text) - 1 | 0);
-          var edit = new vscode.WorkspaceEdit();
-          edit.replace(document.uri, range, text);
-          vscode.workspace.applyEdit(edit);
-        }
-      }));
-      context.subscriptions.push(vscode.commands.registerCommand('skew.removeCast', function(document, range) {
-        var text = document.getText(range);
+          for (var i = 0, list = vscode.workspace.textDocuments, count = in_List.count(list); i < count; i = i + 1 | 0) {
+            var doc = in_List.get(list, i);
 
-        if (in_string.startsWith(text, 'as ')) {
-          var line = document.lineAt(range.start).text;
-          var column = line.slice(0, range.start.character).trimRight().length;
-          range = new vscode.Range(range.start.line, column, range.end.line, range.end.character);
-          var edit = new vscode.WorkspaceEdit();
-          edit.replace(document.uri, range, '');
-          vscode.workspace.applyEdit(edit);
-        }
-      }));
-      context.subscriptions.push(vscode.commands.registerCommand('skew.removeLeadingZeros', function(document, range) {
-        var text = document.getText(range);
-        var value = +text;
-
-        if (in_string.startsWith(text, '0') && value == value) {
-          while (in_string.startsWith(text, '0')) {
-            text = in_string.slice1(text, 1);
+            // Make sure the contents of the document are still what they should be
+            if (doc.uri.toString() === uri && doc.getText(converted) === expected) {
+              var edit = new vscode.WorkspaceEdit();
+              edit.replace(doc.uri, converted, replacement);
+              vscode.workspace.applyEdit(edit);
+              break;
+            }
           }
-
-          var edit = new vscode.WorkspaceEdit();
-          edit.replace(document.uri, range, text);
-          vscode.workspace.applyEdit(edit);
-        }
-      }));
-      context.subscriptions.push(vscode.commands.registerCommand('skew.addOctalPrefix', function(document, range) {
-        var text = document.getText(range);
-        var value = +text;
-
-        if (value == value) {
-          while (in_string.startsWith(text, '0')) {
-            text = in_string.slice1(text, 1);
-          }
-
-          var edit = new vscode.WorkspaceEdit();
-          edit.replace(document.uri, range, '0o' + text);
-          vscode.workspace.applyEdit(edit);
-        }
+        });
       }));
     };
   }
 
-  var in_string = {};
+  function reportErrorsFromExtension(callback) {
+    try {
+      callback();
+    }
 
-  in_string.slice1 = function(self, start) {
-    assert(0 <= start && start <= in_string.count(self));
-    return self.slice(start);
+    catch (e) {
+      var message = (e && e.stack ? e.stack : e) + '';
+      console.error('skew: ' + message);
+      vscode.window.showErrorMessage('skew: ' + message);
+    }
+  }
+
+  function convertRangeFromExtension(range) {
+    // TextDocument.getText() crashes if the range uses duck typing
+    return new vscode.Range(range.start.line, range.start.column, range.end.line, range.end.column);
+  }
+
+  var in_List = {};
+
+  in_List.get = function(self, index) {
+    assert(0 <= index && index < in_List.count(self));
+    return self[index];
   };
 
-  in_string.slice2 = function(self, start, end) {
-    assert(0 <= start && start <= end && end <= in_string.count(self));
-    return self.slice(start, end);
-  };
-
-  in_string.startsWith = function(self, text) {
-    return in_string.count(self) >= in_string.count(text) && in_string.slice2(self, 0, in_string.count(text)) == text;
-  };
-
-  in_string.endsWith = function(self, text) {
-    return in_string.count(self) >= in_string.count(text) && in_string.slice1(self, in_string.count(self) - in_string.count(text) | 0) == text;
-  };
-
-  in_string.count = function(self) {
+  in_List.count = function(self) {
     return self.length;
   };
 
