@@ -129,7 +129,7 @@
 
     for (var i = 0, list = result.ranges, count = list.length; i < count; i = i + 1 | 0) {
       var range = in_List.get(list, i);
-      var uri = 'file://' + range.source.split('\\').join('/').split('/').map(encodeURIComponent).join('/');
+      var uri = range.source;
       var changes = in_StringMap.get(map, uri, null);
 
       if (changes == null) {
@@ -198,7 +198,7 @@
         var absolute = in_List.get(list1, i1);
 
         if (!('file://' + absolute.split('\\').join('/').split('/').map(encodeURIComponent).join('/') in openURIs)) {
-          inputs.push({'name': absolute, 'contents': fs.readFileSync(absolute, 'utf8')});
+          inputs.push({'name': 'file://' + absolute.split('\\').join('/').split('/').map(encodeURIComponent).join('/'), 'contents': fs.readFileSync(absolute, 'utf8')});
         }
       }
     }

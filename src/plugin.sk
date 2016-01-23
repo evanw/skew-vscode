@@ -278,7 +278,7 @@ def computeRenameEdits(skew dynamic, request dynamic) dynamic {
   }
   var map StringMap<List<dynamic>> = {}
   for range in result.ranges as List<dynamic> {
-    var uri = pathToURI(range.source)
+    var uri = range.source
     var changes = map.get(uri, null)
     if changes == null {
       map[uri] = changes = []
@@ -373,7 +373,7 @@ def build(skew dynamic, workspaceRoot dynamic, openDocuments dynamic) List<dynam
     for absolute in findAllFiles(workspaceRoot, name => name.endsWith(".sk")) {
       if !(pathToURI(absolute) in openURIs) {
         inputs.append({
-          "name": absolute,
+          "name": pathToURI(absolute),
           "contents": fs.readFileSync(absolute, "utf8"),
         } as dynamic)
       }
