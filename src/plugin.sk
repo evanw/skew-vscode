@@ -118,6 +118,9 @@ def serverMain {
         "renameProvider": true,
         "definitionProvider": true,
         "documentSymbolProvider": true,
+        "completionProvider": {
+          "resolveProvider": true,
+        },
       },
     }
   })
@@ -156,6 +159,22 @@ def serverMain {
       edits = computeRenameEdits(skew, request)
     })
     return edits
+  })
+
+  # Support the code completion feature
+  connection.onCompletion(request => {
+    var list List<dynamic> = null
+    reportErrorsFromServer(connection, => {
+      list = computeCompletions(skew, request, builder)
+    })
+    return list
+  })
+  connection.onCompletionResolve(request => {
+    var details dynamic = null
+    reportErrorsFromServer(connection, => {
+      details = computeCompletionDetails(skew, request, connection)
+    })
+    return details
   })
 
   # Listen to file system changes for *.sk files
@@ -237,7 +256,7 @@ const symbolKindMap StringMap<VisualStudioCode.SymbolKind> = {
   "FUNCTION_GLOBAL": .FUNCTION,
   "FUNCTION_INSTANCE": .METHOD,
 
-  "VARIABLE_ENUM": .VARIABLE,
+  "VARIABLE_ENUM_OR_FLAGS": .VARIABLE,
   "VARIABLE_GLOBAL": .VARIABLE,
   "VARIABLE_INSTANCE": .FIELD,
 }
@@ -293,6 +312,97 @@ def computeRenameEdits(skew dynamic, request dynamic) dynamic {
   }
 }
 
+const typeNameMap = {
+  "PARAMETER_FUNCTION": "typeParameterName",
+  "PARAMETER_OBJECT": "typeParameterName",
+
+  "OBJECT_CLASS": "className",
+  "OBJECT_ENUM": "className",
+  "OBJECT_FLAGS": "className",
+  "OBJECT_GLOBAL": "className",
+  "OBJECT_INTERFACE": "className",
+  "OBJECT_NAMESPACE": "className",
+  "OBJECT_WRAPPED": "className",
+
+  "FUNCTION_ANNOTATION": "identifier",
+  "FUNCTION_CONSTRUCTOR": "identifier",
+  "FUNCTION_GLOBAL": "identifier",
+  "FUNCTION_INSTANCE": "identifier",
+  "FUNCTION_LOCAL": "identifier",
+
+  "VARIABLE_ARGUMENT": "parameterName",
+  "VARIABLE_ENUM_OR_FLAGS": "parameterName",
+  "VARIABLE_GLOBAL": "parameterName",
+  "VARIABLE_INSTANCE": "parameterName",
+  "VARIABLE_LOCAL": "parameterName",
+}
+
+var completionCache List<dynamic> = []
+
+def computeCompletions(skew dynamic, request dynamic, builder Builder) List<dynamic> {
+  var result = skew.completionQuery({
+    "source": request.uri,
+    "line": request.position.line,
+    "column": request.position.character,
+    "target": "js",
+    "inputs": gatherInputs(builder.workspaceRoot, builder.openDocuments),
+  })
+
+  completionCache = result.completions
+  if result.range == null || completionCache == null {
+    return null
+  }
+
+  var list List<dynamic> = []
+  var range = convertRangeFromServer(result.range)
+
+  for i in 0..completionCache.count {
+    var symbol = completionCache[i]
+    list.append({
+      "label": symbol.name,
+      "kind": typeNameMap.get(symbol.kind, "text"),
+      "textEdit": {
+        "range": range,
+        "newText": symbol.name,
+      },
+      "data": i,
+    } as dynamic)
+  }
+
+  return list
+}
+
+def computeCompletionDetails(skew dynamic, request dynamic, connection dynamic) dynamic {
+  var index = request.data as int
+
+  if completionCache != null && index >= 0 && index < completionCache.count {
+    var symbol = completionCache[index]
+    var comments string = null
+
+    # Format comments into paragraphs for documentation
+    if symbol.comments != null {
+      var lines List<string> = symbol.comments.map(line => line.trim())
+      var wasBlank = false
+      comments = ""
+
+      for line in lines {
+        if line != "" {
+          comments += wasBlank ? "\n\n" : " "
+        }
+        comments += line
+        wasBlank = line == ""
+      }
+    }
+
+    return {
+      "detail": symbol.type,
+      "documentation": comments,
+    }
+  }
+
+  return null
+}
+
 class Builder {
   var skew dynamic
   var connection dynamic
@@ -304,7 +414,7 @@ class Builder {
     clearTimeout(timeout)
     timeout = setTimeout(=> {
       reportErrorsFromServer(connection, => {
-        var diagnostics = build(skew, workspaceRoot, openDocuments)
+        var diagnostics = build(self)
         sendDiagnostics(openDocuments, diagnostics, connection)
       })
     }, 100)
@@ -355,7 +465,7 @@ def findAllFiles(root string, filter fn(string) bool) List<string> {
   return files
 }
 
-def build(skew dynamic, workspaceRoot dynamic, openDocuments dynamic) List<dynamic> {
+def gatherInputs(workspaceRoot dynamic, openDocuments dynamic) List<dynamic> {
   var inputs List<dynamic> = []
   var openURIs StringMap<int> = {}
 
@@ -380,14 +490,15 @@ def build(skew dynamic, workspaceRoot dynamic, openDocuments dynamic) List<dynam
     }
   }
 
-  # Pass the inputs to the compiler for a build
-  var result = skew.compile({
-    "target": "js",
-    "inputs": inputs,
-    "stopAfterResolve": true,
-  })
+  return inputs
+}
 
-  return result.log.diagnostics
+def build(builder Builder) List<dynamic> {
+  return builder.skew.compile({
+    "target": "js",
+    "inputs": gatherInputs(builder.workspaceRoot, builder.openDocuments),
+    "stopAfterResolve": true,
+  }).log.diagnostics
 }
 
 def convertRangeFromExtension(range dynamic) dynamic {

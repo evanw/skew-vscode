@@ -24,7 +24,7 @@
     connection.onInitialize(function(params) {
       builder.workspaceRoot = params.rootPath ? params.rootPath : null;
       builder.buildLater();
-      return {'capabilities': {'textDocumentSync': openDocuments.syncKind, 'hoverProvider': true, 'renameProvider': true, 'definitionProvider': true, 'documentSymbolProvider': true}};
+      return {'capabilities': {'textDocumentSync': openDocuments.syncKind, 'hoverProvider': true, 'renameProvider': true, 'definitionProvider': true, 'documentSymbolProvider': true, 'completionProvider': {'resolveProvider': true}}};
     });
 
     // Show tooltips on hover
@@ -61,6 +61,22 @@
         edits = computeRenameEdits(skew, request);
       });
       return edits;
+    });
+
+    // Support the code completion feature
+    connection.onCompletion(function(request) {
+      var list = null;
+      reportErrorsFromServer(connection, function() {
+        list = computeCompletions(skew, request, builder);
+      });
+      return list;
+    });
+    connection.onCompletionResolve(function(request) {
+      var details = null;
+      reportErrorsFromServer(connection, function() {
+        details = computeCompletionDetails(skew, request, connection);
+      });
+      return details;
     });
 
     // Listen to file system changes for *.sk files
@@ -142,6 +158,58 @@
     return {'changes': map};
   }
 
+  function computeCompletions(skew, request, builder) {
+    var result = skew.completionQuery({'source': request.uri, 'line': request.position.line, 'column': request.position.character, 'target': 'js', 'inputs': gatherInputs(builder.workspaceRoot, builder.openDocuments)});
+    completionCache = result.completions;
+
+    if (result.range === null || completionCache == null) {
+      return null;
+    }
+
+    var list = [];
+    var range = convertRangeFromServer(result.range);
+
+    for (var i = 0, count = completionCache.length; i < count; i = i + 1 | 0) {
+      var symbol = in_List.get(completionCache, i);
+      list.push({'label': symbol.name, 'kind': in_StringMap.get(typeNameMap, symbol.kind, 'text'), 'textEdit': {'range': range, 'newText': symbol.name}, 'data': i});
+    }
+
+    return list;
+  }
+
+  function computeCompletionDetails(skew, request, connection) {
+    var index = request.data | 0;
+
+    if (completionCache != null && index >= 0 && index < completionCache.length) {
+      var symbol = in_List.get(completionCache, index);
+      var comments = null;
+
+      // Format comments into paragraphs for documentation
+      if (symbol.comments !== null) {
+        var lines = symbol.comments.map(function(line) {
+          return line.trim();
+        });
+        var wasBlank = false;
+        comments = '';
+
+        for (var i = 0, count = lines.length; i < count; i = i + 1 | 0) {
+          var line = in_List.get(lines, i);
+
+          if (line != '') {
+            comments += wasBlank ? '\n\n' : ' ';
+          }
+
+          comments += line;
+          wasBlank = line == '';
+        }
+      }
+
+      return {'detail': symbol.type, 'documentation': comments};
+    }
+
+    return null;
+  }
+
   function reportErrorsFromServer(connection, callback) {
     try {
       callback();
@@ -179,7 +247,7 @@
     return files;
   }
 
-  function build(skew, workspaceRoot, openDocuments) {
+  function gatherInputs(workspaceRoot, openDocuments) {
     var inputs = [];
     var openURIs = Object.create(null);
 
@@ -203,9 +271,11 @@
       }
     }
 
-    // Pass the inputs to the compiler for a build
-    var result = skew.compile({'target': 'js', 'inputs': inputs, 'stopAfterResolve': true});
-    return result.log.diagnostics;
+    return inputs;
+  }
+
+  function build(builder) {
+    return builder.skew.compile({'target': 'js', 'inputs': gatherInputs(builder.workspaceRoot, builder.openDocuments), 'stopAfterResolve': true}).log.diagnostics;
   }
 
   function convertRangeFromServer(range) {
@@ -254,7 +324,7 @@
     clearTimeout(self.timeout);
     self.timeout = setTimeout(function() {
       reportErrorsFromServer(self.connection, function() {
-        var diagnostics = build(self.skew, self.workspaceRoot, self.openDocuments);
+        var diagnostics = build(self);
         sendDiagnostics(self.openDocuments, diagnostics, self.connection);
       });
     }, 100);
@@ -300,7 +370,9 @@
   var fs = require('fs');
   var path = require('path');
   var server = require('vscode-languageserver');
-  var symbolKindMap = in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(Object.create(null), 'OBJECT_CLASS', 5), 'OBJECT_ENUM', 10), 'OBJECT_INTERFACE', 11), 'OBJECT_NAMESPACE', 3), 'OBJECT_WRAPPED', 5), 'FUNCTION_ANNOTATION', 12), 'FUNCTION_CONSTRUCTOR', 9), 'FUNCTION_GLOBAL', 12), 'FUNCTION_INSTANCE', 6), 'VARIABLE_ENUM', 13), 'VARIABLE_GLOBAL', 13), 'VARIABLE_INSTANCE', 8);
+  var symbolKindMap = in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(Object.create(null), 'OBJECT_CLASS', 5), 'OBJECT_ENUM', 10), 'OBJECT_INTERFACE', 11), 'OBJECT_NAMESPACE', 3), 'OBJECT_WRAPPED', 5), 'FUNCTION_ANNOTATION', 12), 'FUNCTION_CONSTRUCTOR', 9), 'FUNCTION_GLOBAL', 12), 'FUNCTION_INSTANCE', 6), 'VARIABLE_ENUM_OR_FLAGS', 13), 'VARIABLE_GLOBAL', 13), 'VARIABLE_INSTANCE', 8);
+  var typeNameMap = in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(Object.create(null), 'PARAMETER_FUNCTION', 'typeParameterName'), 'PARAMETER_OBJECT', 'typeParameterName'), 'OBJECT_CLASS', 'className'), 'OBJECT_ENUM', 'className'), 'OBJECT_FLAGS', 'className'), 'OBJECT_GLOBAL', 'className'), 'OBJECT_INTERFACE', 'className'), 'OBJECT_NAMESPACE', 'className'), 'OBJECT_WRAPPED', 'className'), 'FUNCTION_ANNOTATION', 'identifier'), 'FUNCTION_CONSTRUCTOR', 'identifier'), 'FUNCTION_GLOBAL', 'identifier'), 'FUNCTION_INSTANCE', 'identifier'), 'FUNCTION_LOCAL', 'identifier'), 'VARIABLE_ARGUMENT', 'parameterName'), 'VARIABLE_ENUM_OR_FLAGS', 'parameterName'), 'VARIABLE_GLOBAL', 'parameterName'), 'VARIABLE_INSTANCE', 'parameterName'), 'VARIABLE_LOCAL', 'parameterName');
+  var completionCache = [];
 
   serverMain();
 })();
