@@ -1,4 +1,8 @@
 (function() {
+  var __create = Object.create ? Object.create : function(prototype) {
+    return {'__proto__': prototype};
+  };
+
   function assert(truth) {
     if (!truth) {
       throw Error('Assertion failed');
@@ -24,7 +28,7 @@
     connection.onInitialize(function(params) {
       builder.workspaceRoot = params.rootPath ? params.rootPath : null;
       builder.buildLater();
-      return {'capabilities': {'textDocumentSync': openDocuments.syncKind, 'hoverProvider': true, 'renameProvider': true, 'definitionProvider': true, 'documentSymbolProvider': true, 'completionProvider': {'resolveProvider': true}}};
+      return {'capabilities': {'textDocumentSync': openDocuments.syncKind, 'hoverProvider': true, 'renameProvider': true, 'definitionProvider': true, 'documentSymbolProvider': true, 'completionProvider': {'resolveProvider': true, 'triggerCharacters': ['.']}, 'signatureHelpProvider': {'triggerCharacters': ['(', ',']}}};
     });
 
     // Show tooltips on hover
@@ -74,9 +78,16 @@
     connection.onCompletionResolve(function(request) {
       var details = null;
       reportErrorsFromServer(connection, function() {
-        details = computeCompletionDetails(skew, request, connection);
+        details = computeCompletionDetails(skew, request);
       });
       return details;
+    });
+    connection.onSignatureHelp(function(request) {
+      var help = null;
+      reportErrorsFromServer(connection, function() {
+        help = computeSignatureHelp(skew, request);
+      });
+      return help;
     });
 
     // Listen to file system changes for *.sk files
@@ -141,7 +152,7 @@
       return null;
     }
 
-    var map = Object.create(null);
+    var map = __create(null);
 
     for (var i = 0, list = result.ranges, count = list.length; i < count; i = i + 1 | 0) {
       var range = in_List.get(list, i);
@@ -177,7 +188,7 @@
     return list;
   }
 
-  function computeCompletionDetails(skew, request, connection) {
+  function computeCompletionDetails(skew, request) {
     var index = request.data | 0;
 
     if (completionCache != null && index >= 0 && index < completionCache.length) {
@@ -208,6 +219,18 @@
     }
 
     return null;
+  }
+
+  function computeSignatureHelp(skew, request) {
+    var result = skew.signatureQuery({'source': request.uri, 'line': request.position.line, 'column': request.position.character});
+
+    if (result.signature === null) {
+      return null;
+    }
+
+    return {'signatures': [{'label': result.signature, 'parameters': result.arguments.map(function(name) {
+      return {'label': name};
+    })}], 'activeSignature': 0, 'activeParameter': result.argumentIndex};
   }
 
   function reportErrorsFromServer(connection, callback) {
@@ -249,7 +272,7 @@
 
   function gatherInputs(workspaceRoot, openDocuments) {
     var inputs = [];
-    var openURIs = Object.create(null);
+    var openURIs = __create(null);
 
     // Always include all open documents
     for (var i = 0, list = openDocuments.all(), count = list.length; i < count; i = i + 1 | 0) {
@@ -284,7 +307,7 @@
 
   function sendDiagnostics(openDocuments, diagnostics, connection) {
     var allDocuments = openDocuments.all();
-    var map = Object.create(null);
+    var map = __create(null);
 
     for (var i = 0, count = diagnostics.length; i < count; i = i + 1 | 0) {
       var diagnostic = in_List.get(diagnostics, i);
@@ -370,8 +393,8 @@
   var fs = require('fs');
   var path = require('path');
   var server = require('vscode-languageserver');
-  var symbolKindMap = in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(Object.create(null), 'OBJECT_CLASS', 5), 'OBJECT_ENUM', 10), 'OBJECT_INTERFACE', 11), 'OBJECT_NAMESPACE', 3), 'OBJECT_WRAPPED', 5), 'FUNCTION_ANNOTATION', 12), 'FUNCTION_CONSTRUCTOR', 9), 'FUNCTION_GLOBAL', 12), 'FUNCTION_INSTANCE', 6), 'VARIABLE_ENUM_OR_FLAGS', 13), 'VARIABLE_GLOBAL', 13), 'VARIABLE_INSTANCE', 8);
-  var typeNameMap = in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(Object.create(null), 'PARAMETER_FUNCTION', 'typeParameterName'), 'PARAMETER_OBJECT', 'typeParameterName'), 'OBJECT_CLASS', 'className'), 'OBJECT_ENUM', 'className'), 'OBJECT_FLAGS', 'className'), 'OBJECT_GLOBAL', 'className'), 'OBJECT_INTERFACE', 'className'), 'OBJECT_NAMESPACE', 'className'), 'OBJECT_WRAPPED', 'className'), 'FUNCTION_ANNOTATION', 'identifier'), 'FUNCTION_CONSTRUCTOR', 'identifier'), 'FUNCTION_GLOBAL', 'identifier'), 'FUNCTION_INSTANCE', 'identifier'), 'FUNCTION_LOCAL', 'identifier'), 'VARIABLE_ARGUMENT', 'parameterName'), 'VARIABLE_ENUM_OR_FLAGS', 'parameterName'), 'VARIABLE_GLOBAL', 'parameterName'), 'VARIABLE_INSTANCE', 'parameterName'), 'VARIABLE_LOCAL', 'parameterName');
+  var symbolKindMap = in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(__create(null), 'OBJECT_CLASS', 5), 'OBJECT_ENUM', 10), 'OBJECT_INTERFACE', 11), 'OBJECT_NAMESPACE', 3), 'OBJECT_WRAPPED', 5), 'FUNCTION_ANNOTATION', 12), 'FUNCTION_CONSTRUCTOR', 9), 'FUNCTION_GLOBAL', 12), 'FUNCTION_INSTANCE', 6), 'VARIABLE_ENUM_OR_FLAGS', 13), 'VARIABLE_GLOBAL', 13), 'VARIABLE_INSTANCE', 8);
+  var typeNameMap = in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(__create(null), 'PARAMETER_FUNCTION', 'typeParameterName'), 'PARAMETER_OBJECT', 'typeParameterName'), 'OBJECT_CLASS', 'className'), 'OBJECT_ENUM', 'className'), 'OBJECT_FLAGS', 'className'), 'OBJECT_GLOBAL', 'className'), 'OBJECT_INTERFACE', 'className'), 'OBJECT_NAMESPACE', 'className'), 'OBJECT_WRAPPED', 'className'), 'FUNCTION_ANNOTATION', 'identifier'), 'FUNCTION_CONSTRUCTOR', 'identifier'), 'FUNCTION_GLOBAL', 'identifier'), 'FUNCTION_INSTANCE', 'identifier'), 'FUNCTION_LOCAL', 'identifier'), 'VARIABLE_ARGUMENT', 'parameterName'), 'VARIABLE_ENUM_OR_FLAGS', 'parameterName'), 'VARIABLE_GLOBAL', 'parameterName'), 'VARIABLE_INSTANCE', 'parameterName'), 'VARIABLE_LOCAL', 'parameterName');
   var completionCache = [];
 
   serverMain();

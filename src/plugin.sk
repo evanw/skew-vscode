@@ -120,6 +120,10 @@ def serverMain {
         "documentSymbolProvider": true,
         "completionProvider": {
           "resolveProvider": true,
+          "triggerCharacters": ["."],
+        },
+        "signatureHelpProvider": {
+          "triggerCharacters": ["(", ","],
         },
       },
     }
@@ -172,9 +176,16 @@ def serverMain {
   connection.onCompletionResolve(request => {
     var details dynamic = null
     reportErrorsFromServer(connection, => {
-      details = computeCompletionDetails(skew, request, connection)
+      details = computeCompletionDetails(skew, request)
     })
     return details
+  })
+  connection.onSignatureHelp(request => {
+    var help dynamic = null
+    reportErrorsFromServer(connection, => {
+      help = computeSignatureHelp(skew, request)
+    })
+    return help
   })
 
   # Listen to file system changes for *.sk files
@@ -372,7 +383,7 @@ def computeCompletions(skew dynamic, request dynamic, builder Builder) List<dyna
   return list
 }
 
-def computeCompletionDetails(skew dynamic, request dynamic, connection dynamic) dynamic {
+def computeCompletionDetails(skew dynamic, request dynamic) dynamic {
   var index = request.data as int
 
   if completionCache != null && index >= 0 && index < completionCache.count {
@@ -401,6 +412,27 @@ def computeCompletionDetails(skew dynamic, request dynamic, connection dynamic) 
   }
 
   return null
+}
+
+def computeSignatureHelp(skew dynamic, request dynamic) dynamic {
+  var result = skew.signatureQuery({
+    "source": request.uri,
+    "line": request.position.line,
+    "column": request.position.character,
+  })
+  if result.signature == null {
+    return null
+  }
+  return {
+    "signatures": [{
+      "label": result.signature,
+      "parameters": result.arguments.map(name => ({
+        "label": name,
+      })),
+    }],
+    "activeSignature": 0,
+    "activeParameter": result.argumentIndex,
+  }
 }
 
 class Builder {
