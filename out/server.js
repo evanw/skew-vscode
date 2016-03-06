@@ -353,17 +353,6 @@
     }, 100);
   };
 
-  var in_string = {};
-
-  in_string.slice1 = function(self, start) {
-    assert(0 <= start && start <= self.length);
-    return self.slice(start);
-  };
-
-  in_string.endsWith = function(self, text) {
-    return self.length >= text.length && in_string.slice1(self, self.length - text.length | 0) == text;
-  };
-
   var in_List = {};
 
   in_List.get = function(self, index) {
@@ -388,6 +377,17 @@
 
     // Compare against undefined so the key is only hashed once for speed
     return value !== void 0 ? value : defaultValue;
+  };
+
+  var in_string = {};
+
+  in_string.slice1 = function(self, start) {
+    assert(0 <= start && start <= self.length);
+    return self.slice(start);
+  };
+
+  in_string.endsWith = function(self, text) {
+    return self.length >= text.length && in_string.slice1(self, self.length - text.length | 0) == text;
   };
 
   var fs = require('fs');
