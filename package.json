@@ -1,7 +1,7 @@
 {
   "name": "skew-vscode",
   "description": "A language service for Skew",
-  "version": "0.7.39",
+  "version": "0.7.41",
   "publisher": "evanw",
   "repository": {
     "type": "git",
@@ -35,6 +35,14 @@
         "configuration": "./skew.configuration.json"
       }
     ],
+    "debuggers": [
+      {
+        "type": "node",
+        "enableBreakpointsFor": {
+          "languageIds": ["skew"]
+        }
+      }
+    ],
     "grammars": [
       {
         "language": "skew",
@@ -44,7 +52,7 @@
     ]
   },
   "dependencies": {
-    "skew": "0.7.39",
+    "skew": "0.7.41",
     "vscode": "0.10.6",
     "vscode-languageclient": "^1.1.0",
     "vscode-languageserver": "^1.1.0"
