@@ -287,9 +287,10 @@
         return in_string.endsWith(name, '.sk');
       }), count1 = list1.length; i1 < count1; i1 = i1 + 1 | 0) {
         var absolute = in_List.get(list1, i1);
+        var uri = pathToURI(absolute);
 
-        if (!('file://' + absolute.split('\\').join('/').split('/').map(encodeURIComponent).join('/') in openURIs)) {
-          inputs.push({'name': 'file://' + absolute.split('\\').join('/').split('/').map(encodeURIComponent).join('/'), 'contents': fs.readFileSync(absolute, 'utf8')});
+        if (!(uri in openURIs)) {
+          inputs.push({'name': uri, 'contents': fs.readFileSync(absolute, 'utf8')});
         }
       }
     }
@@ -332,6 +333,18 @@
       var document = in_List.get(allDocuments, i1);
       connection.sendDiagnostics({'uri': document.uri, 'diagnostics': in_StringMap.get(map, document.uri, [])});
     }
+  }
+
+  function pathToURI(absolute) {
+    // Convert Windows-style paths to Unix-style paths
+    absolute = absolute.split('\\').join('/');
+
+    if (!in_string.startsWith(absolute, '/')) {
+      absolute = '/' + absolute;
+    }
+
+    // Encode URI components
+    return 'file://' + absolute.split('/').map(encodeURIComponent).join('/');
   }
 
   function Builder(skew, connection) {
@@ -384,6 +397,15 @@
   in_string.slice1 = function(self, start) {
     assert(0 <= start && start <= self.length);
     return self.slice(start);
+  };
+
+  in_string.slice2 = function(self, start, end) {
+    assert(0 <= start && start <= end && end <= self.length);
+    return self.slice(start, end);
+  };
+
+  in_string.startsWith = function(self, text) {
+    return self.length >= text.length && in_string.slice2(self, 0, text.length) == text;
   };
 
   in_string.endsWith = function(self, text) {

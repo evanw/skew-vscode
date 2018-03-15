@@ -513,9 +513,10 @@ def gatherInputs(workspaceRoot dynamic, openDocuments dynamic) List<dynamic> {
   # Read file contents for all non-open files
   if workspaceRoot != null {
     for absolute in findAllFiles(workspaceRoot, name => name.endsWith(".sk")) {
-      if !(pathToURI(absolute) in openURIs) {
+      const uri = pathToURI(absolute)
+      if !(uri in openURIs) {
         inputs.append({
-          "name": pathToURI(absolute),
+          "name": uri,
           "contents": fs.readFileSync(absolute, "utf8"),
         } as dynamic)
       }
@@ -585,7 +586,10 @@ def sendDiagnostics(openDocuments dynamic, diagnostics List<dynamic>, connection
 }
 
 def pathToURI(absolute string) string {
-  return "file://" + "/".join(absolute
-    .replaceAll("\\", "/").split("/")
-    .map<string>(dynamic.encodeURIComponent))
+  # Convert Windows-style paths to Unix-style paths
+  absolute = absolute.replaceAll("\\", "/")
+  if !absolute.startsWith("/") { absolute = "/" + absolute }
+
+  # Encode URI components
+  return "file://" + "/".join(absolute.split("/").map<string>(dynamic.encodeURIComponent))
 }
