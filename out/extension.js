@@ -28,7 +28,7 @@
           }
 
           // Convert each fix into a code action
-          for (var i = 0, list = fixes, count = in_List.count(list); i < count; i = i + 1 | 0) {
+          for (var i = 0, list = fixes, count = list.length; i < count; i = i + 1 | 0) {
             var fix = in_List.get(list, i);
             commands.push({'title': fix.description, 'command': 'skew.applyFix', 'arguments': [document.uri.toString(), fix.range, fix.expected, fix.replacement]});
           }
@@ -39,7 +39,7 @@
         reportErrorsFromExtension(function() {
           var converted = convertRangeFromExtension(range);
 
-          for (var i = 0, list = vscode.workspace.textDocuments, count = in_List.count(list); i < count; i = i + 1 | 0) {
+          for (var i = 0, list = vscode.workspace.textDocuments, count = list.length; i < count; i = i + 1 | 0) {
             var document = in_List.get(list, i);
 
             // Make sure the contents of the document are still what they should be
@@ -75,12 +75,8 @@
   var in_List = {};
 
   in_List.get = function(self, index) {
-    assert(0 <= index && index < in_List.count(self));
+    assert(0 <= index && index < self.length);
     return self[index];
-  };
-
-  in_List.count = function(self) {
-    return self.length;
   };
 
   var path = require('path');

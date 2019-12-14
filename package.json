@@ -9,10 +9,10 @@
   },
   "license": "MIT",
   "engines": {
-    "vscode": "^0.10.1"
+    "vscode": "^1.41.0"
   },
   "categories": [
-    "Languages"
+    "Programming Languages"
   ],
   "activationEvents": [
     "onLanguage:skew"
@@ -35,14 +35,6 @@
         "configuration": "./skew.configuration.json"
       }
     ],
-    "debuggers": [
-      {
-        "type": "node",
-        "enableBreakpointsFor": {
-          "languageIds": ["skew"]
-        }
-      }
-    ],
     "grammars": [
       {
         "language": "skew",
@@ -52,9 +44,9 @@
     ]
   },
   "dependencies": {
-    "skew": "0.7.42",
-    "vscode": "0.10.6",
-    "vscode-languageclient": "^1.1.0",
-    "vscode-languageserver": "^1.1.0"
+    "skew": "0.9.5",
+    "vscode": "1.1.36",
+    "vscode-languageclient": "5.2.1",
+    "vscode-languageserver": "5.2.1"
   }
 }

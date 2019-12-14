@@ -1,8 +1,4 @@
 (function() {
-  var __create = Object.create ? Object.create : function(prototype) {
-    return {'__proto__': prototype};
-  };
-
   function assert(truth) {
     if (!truth) {
       throw Error('Assertion failed');
@@ -152,7 +148,7 @@
       return null;
     }
 
-    var map = __create(null);
+    var map = new Map();
 
     for (var i = 0, list = result.ranges, count = list.length; i < count; i = i + 1 | 0) {
       var range = in_List.get(list, i);
@@ -160,7 +156,7 @@
       var changes = in_StringMap.get(map, uri, null);
 
       if (changes == null) {
-        map[uri] = changes = [];
+        in_StringMap.set(map, uri, changes = []);
       }
 
       changes.push({'range': convertRangeFromServer(range), 'newText': request.newName});
@@ -272,24 +268,24 @@
 
   function gatherInputs(workspaceRoot, openDocuments) {
     var inputs = [];
-    var openURIs = __create(null);
+    var openURIs = new Map();
 
     // Always include all open documents
     for (var i = 0, list = openDocuments.all(), count = list.length; i < count; i = i + 1 | 0) {
       var document = in_List.get(list, i);
-      openURIs[document.uri] = 0;
+      in_StringMap.set(openURIs, document.uri, 0);
       inputs.push({'name': document.uri, 'contents': document.getText()});
     }
 
     // Read file contents for all non-open files
     if (workspaceRoot !== null) {
       for (var i1 = 0, list1 = findAllFiles(workspaceRoot, function(name) {
-        return in_string.endsWith(name, '.sk');
+        return name.endsWith('.sk');
       }), count1 = list1.length; i1 < count1; i1 = i1 + 1 | 0) {
         var absolute = in_List.get(list1, i1);
         var uri = pathToURI(absolute);
 
-        if (!(uri in openURIs)) {
+        if (!openURIs.has(uri)) {
           inputs.push({'name': uri, 'contents': fs.readFileSync(absolute, 'utf8')});
         }
       }
@@ -308,7 +304,7 @@
 
   function sendDiagnostics(openDocuments, diagnostics, connection) {
     var allDocuments = openDocuments.all();
-    var map = __create(null);
+    var map = new Map();
 
     for (var i = 0, count = diagnostics.length; i < count; i = i + 1 | 0) {
       var diagnostic = in_List.get(diagnostics, i);
@@ -317,7 +313,7 @@
 
       if (group == null) {
         group = [];
-        map[absolute] = group;
+        in_StringMap.set(map, absolute, group);
       }
 
       group.push({
@@ -339,7 +335,7 @@
     // Convert Windows-style paths to Unix-style paths
     absolute = absolute.split('\\').join('/');
 
-    if (!in_string.startsWith(absolute, '/')) {
+    if (!absolute.startsWith('/')) {
       absolute = '/' + absolute;
     }
 
@@ -380,43 +376,28 @@
 
   var in_StringMap = {};
 
+  in_StringMap.set = function(self, key, value) {
+    self.set(key, value);
+    return value;
+  };
+
   in_StringMap.insert = function(self, key, value) {
-    self[key] = value;
+    self.set(key, value);
     return self;
   };
 
   in_StringMap.get = function(self, key, defaultValue) {
-    var value = self[key];
+    var value = self.get(key);
 
     // Compare against undefined so the key is only hashed once for speed
     return value !== void 0 ? value : defaultValue;
   };
 
-  var in_string = {};
-
-  in_string.slice1 = function(self, start) {
-    assert(0 <= start && start <= self.length);
-    return self.slice(start);
-  };
-
-  in_string.slice2 = function(self, start, end) {
-    assert(0 <= start && start <= end && end <= self.length);
-    return self.slice(start, end);
-  };
-
-  in_string.startsWith = function(self, text) {
-    return self.length >= text.length && in_string.slice2(self, 0, text.length) == text;
-  };
-
-  in_string.endsWith = function(self, text) {
-    return self.length >= text.length && in_string.slice1(self, self.length - text.length | 0) == text;
-  };
-
   var fs = require('fs');
   var path = require('path');
   var server = require('vscode-languageserver');
-  var symbolKindMap = in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(__create(null), 'OBJECT_CLASS', 5), 'OBJECT_ENUM', 10), 'OBJECT_INTERFACE', 11), 'OBJECT_NAMESPACE', 3), 'OBJECT_WRAPPED', 5), 'FUNCTION_ANNOTATION', 12), 'FUNCTION_CONSTRUCTOR', 9), 'FUNCTION_GLOBAL', 12), 'FUNCTION_INSTANCE', 6), 'VARIABLE_ENUM_OR_FLAGS', 13), 'VARIABLE_GLOBAL', 13), 'VARIABLE_INSTANCE', 8);
-  var typeNameMap = in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(__create(null), 'PARAMETER_FUNCTION', 'typeParameterName'), 'PARAMETER_OBJECT', 'typeParameterName'), 'OBJECT_CLASS', 'className'), 'OBJECT_ENUM', 'className'), 'OBJECT_FLAGS', 'className'), 'OBJECT_GLOBAL', 'className'), 'OBJECT_INTERFACE', 'className'), 'OBJECT_NAMESPACE', 'className'), 'OBJECT_WRAPPED', 'className'), 'FUNCTION_ANNOTATION', 'identifier'), 'FUNCTION_CONSTRUCTOR', 'identifier'), 'FUNCTION_GLOBAL', 'identifier'), 'FUNCTION_INSTANCE', 'identifier'), 'FUNCTION_LOCAL', 'identifier'), 'VARIABLE_ARGUMENT', 'parameterName'), 'VARIABLE_ENUM_OR_FLAGS', 'parameterName'), 'VARIABLE_GLOBAL', 'parameterName'), 'VARIABLE_INSTANCE', 'parameterName'), 'VARIABLE_LOCAL', 'parameterName');
+  var symbolKindMap = in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(new Map(), 'OBJECT_CLASS', 5), 'OBJECT_ENUM', 10), 'OBJECT_INTERFACE', 11), 'OBJECT_NAMESPACE', 3), 'OBJECT_WRAPPED', 5), 'FUNCTION_ANNOTATION', 12), 'FUNCTION_CONSTRUCTOR', 9), 'FUNCTION_GLOBAL', 12), 'FUNCTION_INSTANCE', 6), 'VARIABLE_ENUM_OR_FLAGS', 13), 'VARIABLE_GLOBAL', 13), 'VARIABLE_INSTANCE', 8);
+  var typeNameMap = in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(in_StringMap.insert(new Map(), 'PARAMETER_FUNCTION', 'typeParameterName'), 'PARAMETER_OBJECT', 'typeParameterName'), 'OBJECT_CLASS', 'className'), 'OBJECT_ENUM', 'className'), 'OBJECT_FLAGS', 'className'), 'OBJECT_GLOBAL', 'className'), 'OBJECT_INTERFACE', 'className'), 'OBJECT_NAMESPACE', 'className'), 'OBJECT_WRAPPED', 'className'), 'FUNCTION_ANNOTATION', 'identifier'), 'FUNCTION_CONSTRUCTOR', 'identifier'), 'FUNCTION_GLOBAL', 'identifier'), 'FUNCTION_INSTANCE', 'identifier'), 'FUNCTION_LOCAL', 'identifier'), 'VARIABLE_ARGUMENT', 'parameterName'), 'VARIABLE_ENUM_OR_FLAGS', 'parameterName'), 'VARIABLE_GLOBAL', 'parameterName'), 'VARIABLE_INSTANCE', 'parameterName'), 'VARIABLE_LOCAL', 'parameterName');
   var completionCache = [];
 
   serverMain();
