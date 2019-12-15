@@ -98,12 +98,6 @@ function sendDiagnostics(openDocuments: server.TextDocuments, diagnostics: reado
   const map = new Map<string, server.Diagnostic[]>();
 
   for (const diagnostic of diagnostics) {
-    if (diagnostic.range === null) {
-      // TODO: Figure out why this happens when "~/dev/skew" is loaded
-      console.error('Got diagnostic with null range:', JSON.stringify(diagnostic));
-      continue;
-    }
-
     const absolute = diagnostic.range.source;
     let group = map.get(absolute);
 
