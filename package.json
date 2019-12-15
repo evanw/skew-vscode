@@ -1,7 +1,7 @@
 {
   "name": "skew-vscode",
   "description": "A language service for Skew",
-  "version": "0.7.42",
+  "version": "0.7.43",
   "publisher": "evanw",
   "repository": {
     "type": "git",
@@ -46,11 +46,11 @@
   },
   "dependencies": {
     "skew": "0.9.8",
-    "vscode": "1.1.36",
     "vscode-languageclient": "5.2.1",
     "vscode-languageserver": "5.2.1"
   },
   "devDependencies": {
+    "vscode": "1.1.36",
     "@types/node": "12.12.17"
   }
 }
