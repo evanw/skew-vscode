@@ -395,6 +395,7 @@ connection.onCompletion(request => reportErrorsFromServer(() => {
   const range = convertRangeFromServer(result.range);
   return completionCache.map<server.CompletionItem>((symbol, i) => ({
     label: symbol.name,
+    detail: symbol.type,
     kind: typeNameMap.get(symbol.kind) || server.CompletionItemKind.Text,
     textEdit: { range, newText: symbol.name },
     data: i,
