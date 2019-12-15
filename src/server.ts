@@ -296,7 +296,25 @@ connection.onDocumentSymbol(request => reportErrorsFromServer(() => {
   if (result.symbols === null) {
     return null;
   }
-  return result.symbols.map(convertSymbolFromServer);
+
+  const allSymbols = result.symbols.map<server.DocumentSymbol>(symbol => ({
+    name: symbol.name,
+    kind: symbolKindMap.get(symbol.kind) || server.SymbolKind.Null,
+    range: convertRangeFromServer(symbol.range),
+    selectionRange: convertRangeFromServer(symbol.range),
+    children: [],
+  }));
+
+  // Insert children into their parents
+  for (let i = 0; i < result.symbols.length; i++) {
+    const parent = result.symbols[i].parent;
+    if (parent >= 0) {
+      allSymbols[parent].children!.push(allSymbols[i]);
+    }
+  }
+
+  // Just return the symbols without parents
+  return allSymbols.filter((_, i) => result.symbols![i].parent === -1);
 }));
 
 // Support the "go to symbol in workspace" feature
@@ -307,20 +325,16 @@ connection.onWorkspaceSymbol(request => reportErrorsFromServer(() => {
   if (result.symbols === null) {
     return null;
   }
-  return result.symbols.map(convertSymbolFromServer);
-}));
-
-function convertSymbolFromServer(symbol: Skew.Symbol): server.SymbolInformation {
-  return {
+  return result.symbols.map(symbol => ({
     name: symbol.name,
     kind: symbolKindMap.get(symbol.kind) || server.SymbolKind.Null,
     location: {
       uri: symbol.range.source,
       range: convertRangeFromServer(symbol.range),
     },
-    containerName: symbol.parent === null ? undefined : symbol.parent,
-  };
-}
+    containerName: symbol.parent === -1 ? undefined : result.symbols![symbol.parent].name,
+  }));
+}));
 
 // Support the "rename symbol" feature
 connection.onRenameRequest(request => reportErrorsFromServer(() => {
