@@ -231,6 +231,7 @@ connection.onInitialize(params => {
   return {
     capabilities: {
       textDocumentSync: builder.openDocuments.syncKind,
+      workspaceSymbolProvider: true,
       referencesProvider: true,
       codeActionProvider: true,
       hoverProvider: true,
@@ -287,7 +288,7 @@ connection.onDefinition(request => reportErrorsFromServer(() => {
   return null;
 }));
 
-// Support the "go to symbol" feature
+// Support the "go to symbol in document" feature
 connection.onDocumentSymbol(request => reportErrorsFromServer(() => {
   const result = skew.symbolsQuery({
     source: request.textDocument.uri,
@@ -295,26 +296,31 @@ connection.onDocumentSymbol(request => reportErrorsFromServer(() => {
   if (result.symbols === null) {
     return null;
   }
-
-  const symbols: server.SymbolInformation[] = [];
-  for (const symbol of result.symbols) {
-    const kind = symbolKindMap.get(symbol.kind);
-
-    if (kind !== undefined) {
-      symbols.push({
-        name: symbol.name,
-        kind,
-        location: {
-          uri: request.textDocument.uri,
-          range: convertRangeFromServer(symbol.range),
-        },
-        containerName: symbol.parent === null ? undefined : symbol.parent,
-      });
-    }
-  }
-
-  return symbols;
+  return result.symbols.map(convertSymbolFromServer);
 }));
+
+// Support the "go to symbol in workspace" feature
+connection.onWorkspaceSymbol(request => reportErrorsFromServer(() => {
+  const result = skew.symbolsQuery({
+    fuzzyName: request.query,
+  });
+  if (result.symbols === null) {
+    return null;
+  }
+  return result.symbols.map(convertSymbolFromServer);
+}));
+
+function convertSymbolFromServer(symbol: Skew.Symbol): server.SymbolInformation {
+  return {
+    name: symbol.name,
+    kind: symbolKindMap.get(symbol.kind) || server.SymbolKind.Null,
+    location: {
+      uri: symbol.range.source,
+      range: convertRangeFromServer(symbol.range),
+    },
+    containerName: symbol.parent === null ? undefined : symbol.parent,
+  };
+}
 
 // Support the "rename symbol" feature
 connection.onRenameRequest(request => reportErrorsFromServer(() => {
