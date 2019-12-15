@@ -18,9 +18,10 @@
     "onLanguage:skew"
   ],
   "scripts": {
-    "build": "mkdir -p out && node_modules/.bin/skewc src --define:BUILD=EXTENSION --output-file=out/extension.js && node_modules/.bin/skewc src --define:BUILD=SERVER --output-file=out/server.js --inline-functions --fold-constants"
+    "postinstall": "npm_package_engines_vscode=1.41.0 node ./node_modules/vscode/bin/install",
+    "build": "tsc && echo done"
   },
-  "main": "./out/extension",
+  "main": "./src/extension",
   "contributes": {
     "languages": [
       {
@@ -44,9 +45,12 @@
     ]
   },
   "dependencies": {
-    "skew": "0.9.5",
+    "skew": "0.9.6",
     "vscode": "1.1.36",
     "vscode-languageclient": "5.2.1",
     "vscode-languageserver": "5.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "12.12.17"
   }
 }
