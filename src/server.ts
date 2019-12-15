@@ -230,6 +230,7 @@ connection.onInitialize(params => {
   return {
     capabilities: {
       textDocumentSync: builder.openDocuments.syncKind,
+      referencesProvider: true,
       codeActionProvider: true,
       hoverProvider: true,
       renameProvider: true,
@@ -336,6 +337,23 @@ connection.onRenameRequest(request => reportErrorsFromServer(() => {
   }
 
   return { changes };
+}));
+
+// Support the "find all references" feature
+connection.onReferences(request => reportErrorsFromServer(() => {
+  const result = skew.renameQuery({
+    source: request.textDocument.uri,
+    line: request.position.line,
+    column: request.position.character,
+  });
+  if (result.ranges === null) {
+    return null;
+  }
+
+  return result.ranges.map(range => ({
+    uri: range.source,
+    range: convertRangeFromServer(range),
+  }));
 }));
 
 // Support the code completion feature
