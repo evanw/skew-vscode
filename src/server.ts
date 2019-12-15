@@ -88,13 +88,13 @@ function convertRangeFromServer(range: Skew.Range): server.Range {
 }
 
 const allFixes = new Map<string, Map<string, Skew.Fix[]>>();
+let previousDocsWithDiagnostics = new Set<string>();
 
 function diagnosticKey({ severity, range, message }: server.Diagnostic): string {
   return JSON.stringify([severity, range, message]);
 }
 
-function sendDiagnostics(openDocuments: server.TextDocuments, diagnostics: readonly Skew.Diagnostic[], connection: server.Connection): void {
-  const allDocuments = openDocuments.all();
+function sendDiagnostics(diagnostics: readonly Skew.Diagnostic[]): void {
   const map = new Map<string, server.Diagnostic[]>();
 
   for (const diagnostic of diagnostics) {
@@ -122,12 +122,20 @@ function sendDiagnostics(openDocuments: server.TextDocuments, diagnostics: reado
     fixesMap.set(diagnosticKey(result), diagnostic.fixes);
   }
 
-  for (const document of allDocuments) {
-    connection.sendDiagnostics({
-      uri: document.uri,
-      diagnostics: map.get(document.uri) || [],
-    });
+  // Clear documents that no longer have diagnostics
+  for (const uri of previousDocsWithDiagnostics) {
+    if (!map.has(uri)) {
+      connection.sendDiagnostics({ uri, diagnostics: [] });
+    }
   }
+
+  // Update documents that have diagnostics
+  for (const [uri, diagnostics] of map) {
+    connection.sendDiagnostics({ uri, diagnostics });
+  }
+
+  // Save the list of diagnostics to clear next time
+  previousDocsWithDiagnostics = new Set(map.keys());
 }
 
 function pathToURI(absolute: string): string {
@@ -156,8 +164,7 @@ class Builder {
     clearTimeout(this.timeout);
     this.timeout = setTimeout(() => {
       reportErrorsFromServer(() => {
-        let diagnostics = build(this);
-        sendDiagnostics(this.openDocuments, diagnostics, connection);
+        sendDiagnostics(build(this));
       });
     }, 100);
   };
