@@ -1,7 +1,7 @@
 {
   "name": "skew-vscode",
   "description": "A language service for Skew",
-  "version": "0.7.48",
+  "version": "0.7.49",
   "publisher": "evanw",
   "repository": {
     "type": "git",
