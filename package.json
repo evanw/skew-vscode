@@ -45,7 +45,7 @@
     ]
   },
   "dependencies": {
-    "skew": "0.9.14",
+    "skew": "0.9.13",
     "vscode-languageclient": "5.2.1",
     "vscode-languageserver": "5.2.1"
   },
