@@ -23,8 +23,19 @@ function findAllFiles(root: string, filter: (entry: string) => boolean) {
 
     for (const entry of fs.readdirSync(folder)) {
       const absolute = path.join(folder, entry);
+      let stats: fs.Stats;
 
-      if (fs.statSync(absolute).isDirectory()) {
+      // Sometimes other processes create and delete files randomly and may
+      // delete a file in between the call to fs.readdirSync() above and the
+      // call to fs.statSync() below. For example, "npm ci" may do this. Make
+      // sure to avoid a crash when that happens.
+      try {
+        stats = fs.statSync(absolute);
+      } catch {
+        continue;
+      }
+
+      if (stats.isDirectory()) {
         folders.push(absolute);
       }
 
@@ -55,9 +66,20 @@ function gatherInputs(workspaceRoot: string | null, openDocuments: server.TextDo
     for (const absolute of findAllFiles(workspaceRoot, name => name.endsWith('.sk'))) {
       const uri = pathToURI(absolute);
       if (!openURIs.has(uri)) {
+        let contents: string;
+
+        // Guard against the case where the file has been deleted from the file
+        // system in between the call to findAllFiles() above and the call to
+        // fs.readFileSync() below.
+        try {
+          contents = fs.readFileSync(absolute, 'utf8');
+        } catch {
+          continue;
+        }
+
         inputs.push({
           name: uri,
-          contents: fs.readFileSync(absolute, 'utf8'),
+          contents,
         });
       }
     }
