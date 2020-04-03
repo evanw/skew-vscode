@@ -1,7 +1,7 @@
 {
   "name": "skew-vscode",
   "description": "A language service for Skew",
-  "version": "0.7.49",
+  "version": "0.7.50",
   "publisher": "evanw",
   "repository": {
     "type": "git",
@@ -19,7 +19,7 @@
   ],
   "scripts": {
     "postinstall": "npm_package_engines_vscode=1.41.0 node ./node_modules/vscode/bin/install",
-    "build": "tsc && echo done"
+    "vscode:prepublish": "tsc"
   },
   "main": "./src/extension",
   "contributes": {
